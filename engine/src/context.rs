@@ -4,10 +4,12 @@ use nalgebra::Matrix4;
 use pollster::FutureExt;
 use wgpu::{
     util::{BufferInitDescriptor, DeviceExt},
-    BindGroup, Buffer, BufferUsages, CommandEncoderDescriptor, Device,
-    IndexFormat, PresentMode, Queue, RenderPipeline, Surface,
-    SurfaceConfiguration, TextureViewDescriptor, VertexAttribute,
-    VertexBufferLayout,
+    BindGroup, Buffer, BufferDescriptor, BufferUsages, Color,
+    CommandEncoderDescriptor, DepthBiasState, DepthStencilState, Device,
+    Extent3d, IndexFormat, PresentMode, Queue,
+    RenderPassDepthStencilAttachment, RenderPipeline, StencilState, Surface,
+    SurfaceConfiguration, Texture, TextureDescriptor, TextureView,
+    TextureViewDescriptor,
 };
 use winit::{
     dpi::PhysicalSize, event::Event, event_loop::ActiveEventLoop,
@@ -17,7 +19,7 @@ use winit::{
 use crate::{
     camera::FirstPersonCamera,
     canvas::{Canvas, DrawCommand},
-    mesh::MeshManager,
+    mesh::{MeshManager, Vertex},
 };
 
 pub struct Context {
@@ -33,6 +35,8 @@ pub struct Context {
     model_bind_group: BindGroup,
     camera: FirstPersonCamera,
     meshes: MeshManager,
+    depth_texture: Texture,
+    depth_texture_view: TextureView,
 }
 
 impl Context {
@@ -135,14 +139,19 @@ impl Context {
                 usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
             });
 
-        let model_uniform_buffer =
-            device.create_buffer_init(&BufferInitDescriptor {
-                label: None,
-                contents: bytemuck::cast_slice(
-                    Matrix4::<f32>::identity().as_slice(),
-                ),
-                usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
-            });
+        let model_uniform_buffer = device.create_buffer(&BufferDescriptor {
+            label: None,
+            size: 128,
+            usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        // device.create_buffer_init(&BufferInitDescriptor {
+        //     label: None,
+        //     contents: bytemuck::cast_slice(
+        //         Matrix4::<f32>::identity().as_slice(),
+        //     ),
+        //     usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
+        // });
 
         let render_pipeline =
             device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -151,20 +160,20 @@ impl Context {
                 vertex: wgpu::VertexState {
                     module: &shader,
                     entry_point: "vs_main",
-                    // buffers: &[],
-                    buffers: &[VertexBufferLayout {
-                        array_stride: size_of::<[f32; 3]>() as u64,
-                        step_mode: wgpu::VertexStepMode::Vertex,
-                        attributes: &[VertexAttribute {
-                            format: wgpu::VertexFormat::Float32x3,
-                            offset: 0,
-                            shader_location: 0,
-                        }],
-                    }],
+                    buffers: &[Vertex::BUFFER_LAYOUT],
                     compilation_options: Default::default(),
                 },
-                primitive: wgpu::PrimitiveState::default(),
-                depth_stencil: None,
+                primitive: wgpu::PrimitiveState {
+                    cull_mode: Some(wgpu::Face::Back),
+                    ..wgpu::PrimitiveState::default()
+                },
+                depth_stencil: Some(DepthStencilState {
+                    format: wgpu::TextureFormat::Depth32Float,
+                    depth_write_enabled: true,
+                    depth_compare: wgpu::CompareFunction::Less,
+                    stencil: StencilState::default(),
+                    bias: DepthBiasState::default(),
+                }),
                 multisample: wgpu::MultisampleState::default(),
                 fragment: Some(wgpu::FragmentState {
                     module: &shader,
@@ -200,6 +209,8 @@ impl Context {
             .get_default_config(&adapter, size.width, size.height)
             .unwrap();
         config.present_mode = PresentMode::Fifo;
+        let (depth_texture, depth_texture_view) =
+            create_depth_texture(&device, &config);
 
         surface.configure(&device, &config);
         let meshes = MeshManager::new(device.clone());
@@ -216,6 +227,8 @@ impl Context {
             model_bind_group,
             camera,
             meshes,
+            depth_texture,
+            depth_texture_view,
         }
     }
 
@@ -226,8 +239,10 @@ impl Context {
     pub(crate) fn render(&self, commands: Vec<DrawCommand>) {
         let frame = self.surface.get_current_texture().unwrap();
         let view = frame.texture.create_view(&TextureViewDescriptor::default());
+
         let view_proj = self.camera.view_proj();
         let view_proj = bytemuck::cast_slice(view_proj.as_slice());
+
         self.queue
             .write_buffer_with(
                 &self.camera_uniform_buffer,
@@ -236,19 +251,32 @@ impl Context {
             )
             .unwrap()
             .copy_from_slice(view_proj);
+        let mut color_load_op = wgpu::LoadOp::Clear(Color {
+            r: 100.0 / 255.0,
+            g: 149.0 / 255.0,
+            b: 237.0 / 255.0,
+            a: 1.0,
+        });
+        let mut depth_load_op = wgpu::LoadOp::Clear(1.0);
         for command in commands {
             let mut encoder = self
                 .device
                 .create_command_encoder(&CommandEncoderDescriptor::default());
-            let transform = bytemuck::cast_slice(command.transform.as_slice());
+            let mut buf = [0u8; 128];
+            buf[0..64].copy_from_slice(bytemuck::cast_slice(
+                command.transform.as_slice(),
+            ));
+            buf[64..128].copy_from_slice(bytemuck::cast_slice(
+                command.transform.try_inverse().unwrap().as_slice(),
+            ));
             self.queue
                 .write_buffer_with(
                     &self.model_uniform_buffer,
                     0,
-                    NonZero::new(transform.len() as u64).unwrap(),
+                    NonZero::new(buf.len() as u64).unwrap(),
                 )
                 .unwrap()
-                .copy_from_slice(transform);
+                .copy_from_slice(&buf);
             let mut rpass =
                 encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                     label: None,
@@ -257,12 +285,21 @@ impl Context {
                             view: &view,
                             resolve_target: None,
                             ops: wgpu::Operations {
-                                load: wgpu::LoadOp::Load,
+                                load: color_load_op,
                                 store: wgpu::StoreOp::Store,
                             },
                         },
                     )],
-                    depth_stencil_attachment: None,
+                    depth_stencil_attachment: Some(
+                        RenderPassDepthStencilAttachment {
+                            view: &self.depth_texture_view,
+                            depth_ops: Some(wgpu::Operations {
+                                load: depth_load_op,
+                                store: wgpu::StoreOp::Store,
+                            }),
+                            stencil_ops: None,
+                        },
+                    ),
                     timestamp_writes: None,
                     occlusion_query_set: None,
                 });
@@ -277,6 +314,8 @@ impl Context {
             rpass.draw_indexed(command.mesh.index_range.clone(), 0, 0..1);
             drop(rpass);
             self.queue.submit(Some(encoder.finish()));
+            color_load_op = wgpu::LoadOp::Load;
+            depth_load_op = wgpu::LoadOp::Load;
         }
         frame.present();
         self.window.request_redraw();
@@ -293,6 +332,31 @@ impl Context {
     pub(crate) fn resize(&mut self, new_size: &PhysicalSize<u32>) {
         self.config.width = new_size.width.max(1);
         self.config.height = new_size.height.max(1);
+        (self.depth_texture, self.depth_texture_view) =
+            create_depth_texture(&self.device, &self.config);
         self.surface.configure(&self.device, &self.config);
     }
+}
+
+fn create_depth_texture(
+    device: &Device,
+    config: &SurfaceConfiguration,
+) -> (Texture, TextureView) {
+    let texture = device.create_texture(&TextureDescriptor {
+        label: None,
+        size: Extent3d {
+            width: config.width,
+            height: config.height,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format: wgpu::TextureFormat::Depth32Float,
+        usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+            | wgpu::TextureUsages::TEXTURE_BINDING,
+        view_formats: &[],
+    });
+    let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+    (texture, view)
 }

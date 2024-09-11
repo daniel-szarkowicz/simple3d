@@ -3,7 +3,7 @@ use std::{any::TypeId, collections::HashMap, ops::Range, sync::Arc};
 use bytemuck::{Pod, Zeroable};
 use wgpu::{
     util::{BufferInitDescriptor, DeviceExt},
-    Buffer, BufferUsages, Device,
+    Buffer, BufferUsages, Device, VertexAttribute, VertexBufferLayout,
 };
 
 pub struct MeshManager {
@@ -50,6 +50,18 @@ fn load_mesh(device: &Device, mesh: Mesh) -> Arc<MeshBuffers> {
 #[derive(Clone, Copy, Pod, Zeroable, Debug)]
 pub struct Vertex {
     pub position: [f32; 3],
+    pub normal: [f32; 3],
+}
+
+impl Vertex {
+    pub const ATTRIB: [VertexAttribute; 2] =
+        wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3];
+
+    pub const BUFFER_LAYOUT: VertexBufferLayout<'static> = VertexBufferLayout {
+        array_stride: size_of::<Vertex>() as u64,
+        step_mode: wgpu::VertexStepMode::Vertex,
+        attributes: &Self::ATTRIB,
+    };
 }
 
 pub struct Mesh {

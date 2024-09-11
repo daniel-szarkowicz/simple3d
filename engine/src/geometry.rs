@@ -12,35 +12,35 @@ impl MeshProvider for Box {
     fn create_mesh() -> Mesh {
         #[rustfmt::skip]
         let vertices = vec![
-           Vertex { position: [ 0.5,  0.5,  0.5] },
-           Vertex { position: [-0.5,  0.5,  0.5] },
-           Vertex { position: [ 0.5, -0.5,  0.5] },
-           Vertex { position: [-0.5, -0.5,  0.5] },
+           Vertex { position: [ 0.5,  0.5,  0.5], normal: [ 0.0,  0.0,  1.0,] },
+           Vertex { position: [-0.5,  0.5,  0.5], normal: [ 0.0,  0.0,  1.0,] },
+           Vertex { position: [ 0.5, -0.5,  0.5], normal: [ 0.0,  0.0,  1.0,] },
+           Vertex { position: [-0.5, -0.5,  0.5], normal: [ 0.0,  0.0,  1.0,] },
 
-           Vertex { position: [-0.5,  0.5, -0.5] },
-           Vertex { position: [ 0.5,  0.5, -0.5] },
-           Vertex { position: [-0.5, -0.5, -0.5] },
-           Vertex { position: [ 0.5, -0.5, -0.5] },
+           Vertex { position: [-0.5,  0.5, -0.5], normal: [ 0.0,  0.0, -1.0,] },
+           Vertex { position: [ 0.5,  0.5, -0.5], normal: [ 0.0,  0.0, -1.0,] },
+           Vertex { position: [-0.5, -0.5, -0.5], normal: [ 0.0,  0.0, -1.0,] },
+           Vertex { position: [ 0.5, -0.5, -0.5], normal: [ 0.0,  0.0, -1.0,] },
 
-           Vertex { position: [ 0.5,  0.5,  0.5] },
-           Vertex { position: [ 0.5, -0.5,  0.5] },
-           Vertex { position: [ 0.5,  0.5, -0.5] },
-           Vertex { position: [ 0.5, -0.5, -0.5] },
+           Vertex { position: [ 0.5,  0.5,  0.5], normal: [ 1.0,  0.0,  0.0,] },
+           Vertex { position: [ 0.5, -0.5,  0.5], normal: [ 1.0,  0.0,  0.0,] },
+           Vertex { position: [ 0.5,  0.5, -0.5], normal: [ 1.0,  0.0,  0.0,] },
+           Vertex { position: [ 0.5, -0.5, -0.5], normal: [ 1.0,  0.0,  0.0,] },
 
-           Vertex { position: [-0.5, -0.5,  0.5] },
-           Vertex { position: [-0.5,  0.5,  0.5] },
-           Vertex { position: [-0.5, -0.5, -0.5] },
-           Vertex { position: [-0.5,  0.5, -0.5] },
+           Vertex { position: [-0.5, -0.5,  0.5], normal: [-1.0,  0.0,  0.0,] },
+           Vertex { position: [-0.5,  0.5,  0.5], normal: [-1.0,  0.0,  0.0,] },
+           Vertex { position: [-0.5, -0.5, -0.5], normal: [-1.0,  0.0,  0.0,] },
+           Vertex { position: [-0.5,  0.5, -0.5], normal: [-1.0,  0.0,  0.0,] },
 
-           Vertex { position: [ 0.5,  0.5,  0.5] },
-           Vertex { position: [ 0.5,  0.5, -0.5] },
-           Vertex { position: [-0.5,  0.5,  0.5] },
-           Vertex { position: [-0.5,  0.5, -0.5] },
+           Vertex { position: [ 0.5,  0.5,  0.5], normal: [ 0.0,  1.0,  0.0,] },
+           Vertex { position: [ 0.5,  0.5, -0.5], normal: [ 0.0,  1.0,  0.0,] },
+           Vertex { position: [-0.5,  0.5,  0.5], normal: [ 0.0,  1.0,  0.0,] },
+           Vertex { position: [-0.5,  0.5, -0.5], normal: [ 0.0,  1.0,  0.0,] },
 
-           Vertex { position: [ 0.5, -0.5, -0.5] },
-           Vertex { position: [ 0.5, -0.5,  0.5] },
-           Vertex { position: [-0.5, -0.5, -0.5] },
-           Vertex { position: [-0.5, -0.5,  0.5] },
+           Vertex { position: [ 0.5, -0.5, -0.5], normal: [ 0.0, -1.0,  0.0,] },
+           Vertex { position: [ 0.5, -0.5,  0.5], normal: [ 0.0, -1.0,  0.0,] },
+           Vertex { position: [-0.5, -0.5, -0.5], normal: [ 0.0, -1.0,  0.0,] },
+           Vertex { position: [-0.5, -0.5,  0.5], normal: [ 0.0, -1.0,  0.0,] },
         ];
         #[rustfmt::skip]
         let indices = vec![
@@ -57,10 +57,13 @@ impl MeshProvider for Box {
 
 impl MeshProvider for Ellipsoid {
     fn create_mesh() -> Mesh {
-        let Polyhedron { vertices, faces } = icosphere(2);
+        let Polyhedron { vertices, faces } = icosphere(3);
         let vertices = vertices
             .into_iter()
-            .map(|position| Vertex { position })
+            .map(|p| Vertex {
+                position: p,
+                normal: p,
+            })
             .collect();
         let indices = faces
             .into_iter()

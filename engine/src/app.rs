@@ -5,7 +5,7 @@ use winit::{event_loop::EventLoop, platform::x11::EventLoopBuilderExtX11};
 use crate::canvas::Canvas;
 
 type Update<State> = fn(&mut State) -> ();
-type Draw<State> = fn(&mut Canvas, &State) -> ();
+type Draw<State> = fn(&State, &mut Canvas) -> ();
 
 pub struct App<State> {
     user_state: State,
@@ -48,12 +48,14 @@ impl<State> App<State> {
         // }
     }
 }
+impl<State: AppState> App<State> {
+    pub fn run_with(state: State) -> ! {
+        let app = App::new(state, State::update, State::draw);
+        app.run()
+    }
+}
 
-// struct Renderer {}
-
-// impl Renderer {
-//     fn render(&mut self, commands: Vec<DrawCommand>) {
-//         let _ = &commands;
-//         // todo
-//     }
-// }
+pub trait AppState {
+    fn update(&mut self);
+    fn draw(&self, canvas: &mut Canvas);
+}

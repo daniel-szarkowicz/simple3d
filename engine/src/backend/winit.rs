@@ -3,7 +3,7 @@ use winit::application::ApplicationHandler;
 use crate::{canvas::Canvas, context::Context};
 
 type Update<State> = fn(&mut State) -> ();
-type Draw<State> = fn(&mut Canvas, &State) -> ();
+type Draw<State> = fn(&State, &mut Canvas) -> ();
 
 pub struct WinitApp<State> {
     state: State,
@@ -44,7 +44,7 @@ impl<State> ApplicationHandler for WinitApp<State> {
                 context.update_camera(1.0 / 60.0);
                 (self.update)(&mut self.state);
                 let mut canvas = context.create_canvas();
-                (self.draw)(&mut canvas, &self.state);
+                (self.draw)(&self.state, &mut canvas);
                 let commands = canvas.commands;
                 context.render(commands);
             }
