@@ -2,9 +2,7 @@ use std::{rc::Rc, thread, time::Duration};
 
 use winit::{event_loop::EventLoop, platform::x11::EventLoopBuilderExtX11};
 
-use crate::{
-    canvas::Canvas, context::Context, mesh::MeshManager, shader::ShaderManager,
-};
+use crate::canvas::Canvas;
 
 type Update<State> = fn(&mut State) -> ();
 type Draw<State> = fn(&mut Canvas, &State) -> ();

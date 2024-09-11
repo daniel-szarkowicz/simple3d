@@ -1,35 +1,32 @@
 pub mod drawing;
 pub mod group;
+use std::sync::Arc;
+
 use crate::math::Transform;
-// use crate::math::{Mat4, Transform};
-use crate::mesh::MeshProvider;
+use crate::mesh::{MeshBuffers, MeshManager, MeshProvider};
 use drawing::Drawing;
 use group::Group;
 use nalgebra::Matrix4;
-// use group::Group;
-
-const ASDF: () = ();
 
 pub struct Canvas<'c> {
     pub(crate) commands: Vec<DrawCommand>,
-    // meshes: &'c mut MeshManager,
+    meshes: &'c mut MeshManager,
     // shaders: &'c mut ShaderManager,
     // queue: &'c Queue,
-    _asdf: &'c (),
 }
 
 impl<'c> Canvas<'c> {
     #[allow(clippy::new_without_default)]
-    pub fn new(// meshes: &'c mut MeshManager,
+    pub fn new(
+        meshes: &'c mut MeshManager,
         // shaders: &'c mut ShaderManager,
         // queue: &'c Queue,
     ) -> Self {
         Self {
             commands: vec![],
-            // meshes,
+            meshes,
             // shaders,
             // queue,
-            _asdf: &ASDF,
         }
     }
 
@@ -41,7 +38,7 @@ impl<'c> Canvas<'c> {
         &'cref mut self,
         group_fn: impl FnOnce(&mut Canvas),
     ) -> Group<'c, 'cref> {
-        let mut canv = Canvas::new();
+        let mut canv = Canvas::new(&mut self.meshes);
         group_fn(&mut canv);
         let commands = canv.commands;
         Group::new(self, commands)
@@ -67,14 +64,14 @@ impl<T: MeshProvider> Drawable for T {
         &self,
         canvas: &'cref mut Canvas<'c>,
     ) -> Drawing<'c, 'cref> {
-        // let meshid = canvas.meshes.get_or_insert(*self);
-        Drawing::new(canvas /* , meshid */)
+        let mesh = canvas.meshes.get_or_insert(*self);
+        Drawing::new(canvas, mesh)
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 pub struct DrawCommand {
-    // pub mesh: MeshId,
+    pub mesh: Arc<MeshBuffers>,
     // pub shader: ShaderId,
     // pub transform: Mat4,
     pub transform: Matrix4<f32>,

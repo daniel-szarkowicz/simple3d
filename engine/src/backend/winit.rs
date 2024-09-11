@@ -45,7 +45,8 @@ impl<State> ApplicationHandler for WinitApp<State> {
                 (self.update)(&mut self.state);
                 let mut canvas = context.create_canvas();
                 (self.draw)(&mut canvas, &self.state);
-                context.render(canvas.commands);
+                let commands = canvas.commands;
+                context.render(commands);
             }
             _ => (),
         }

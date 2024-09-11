@@ -1,12 +1,12 @@
-use std::{borrow::Cow, cell::RefCell, num::NonZero, sync::Arc, time::Instant};
+use std::{borrow::Cow, num::NonZero, sync::Arc};
 
 use nalgebra::Matrix4;
 use pollster::FutureExt;
 use wgpu::{
-    util::{BufferInitDescriptor, DeviceExt, RenderEncoder},
+    util::{BufferInitDescriptor, DeviceExt},
     BindGroup, Buffer, BufferUsages, CommandEncoderDescriptor, Device,
-    PresentMode, Queue, RenderPipeline, Surface, SurfaceConfiguration,
-    TextureDescriptor, TextureViewDescriptor, VertexAttribute,
+    IndexFormat, PresentMode, Queue, RenderPipeline, Surface,
+    SurfaceConfiguration, TextureViewDescriptor, VertexAttribute,
     VertexBufferLayout,
 };
 use winit::{
@@ -17,8 +17,7 @@ use winit::{
 use crate::{
     camera::FirstPersonCamera,
     canvas::{Canvas, DrawCommand},
-    mesh::Mesh,
-    shader::Shader,
+    mesh::MeshManager,
 };
 
 pub struct Context {
@@ -28,13 +27,12 @@ pub struct Context {
     device: Arc<Device>,
     render_pipeline: RenderPipeline,
     queue: Queue,
-    vertex_buffer: Buffer,
     camera_uniform_buffer: Buffer,
     model_uniform_buffer: Buffer,
     camera_bind_group: BindGroup,
     model_bind_group: BindGroup,
-    start: Instant,
     camera: FirstPersonCamera,
+    meshes: MeshManager,
 }
 
 impl Context {
@@ -128,19 +126,6 @@ impl Context {
         let swapchain_capabilities = surface.get_capabilities(&adapter);
         let swapchain_format = swapchain_capabilities.formats[0];
 
-        #[rustfmt::skip]
-        let triangle = [
-            0.0, 0.0, 0.0,
-            0.0, 1.0, 0.0,
-            1.0, 0.0, 0.0f32
-        ];
-
-        let vertex_buffer = device.create_buffer_init(&BufferInitDescriptor {
-            label: None,
-            contents: bytemuck::bytes_of(&triangle),
-            usage: BufferUsages::VERTEX,
-        });
-
         let camera = FirstPersonCamera::default();
 
         let camera_uniform_buffer =
@@ -217,6 +202,7 @@ impl Context {
         config.present_mode = PresentMode::Fifo;
 
         surface.configure(&device, &config);
+        let meshes = MeshManager::new(device.clone());
         Self {
             window: window.clone(),
             config,
@@ -224,44 +210,17 @@ impl Context {
             device,
             render_pipeline,
             queue,
-            vertex_buffer,
             camera_uniform_buffer,
             model_uniform_buffer,
             camera_bind_group,
             model_bind_group,
-            start: Instant::now(),
             camera,
+            meshes,
         }
     }
 
-    // pub fn load_mesh(&self, mesh: Mesh) -> MeshId {
-    //     let mut meshes = self.meshes.borrow_mut();
-    //     let id = MeshId(meshes.len() as u32);
-    //     meshes.push(mesh);
-    //     id
-    // }
-
-    // pub fn load_shader(&self, shader: Shader) -> ShaderId {
-    //     let mut shaders = self.shaders.borrow_mut();
-    //     let id = ShaderId(shaders.len() as u32);
-    //     shaders.push(shader);
-    //     id
-    // }
-
-    // pub fn render(&self, commands: Vec<DrawCommand>) {
-    //     let meshes = self.meshes.borrow();
-    //     let shaders = self.shaders.borrow();
-    //     for command in commands {
-    //         println!(
-    //             "{} {}",
-    //             meshes[command.mesh.0 as usize].name,
-    //             shaders[command.shader.0 as usize].name
-    //         );
-    //     }
-    // }
-
-    pub fn create_canvas(&self) -> Canvas {
-        Canvas::new()
+    pub fn create_canvas(&mut self) -> Canvas {
+        Canvas::new(&mut self.meshes)
     }
 
     pub(crate) fn render(&self, commands: Vec<DrawCommand>) {
@@ -269,18 +228,18 @@ impl Context {
         let view = frame.texture.create_view(&TextureViewDescriptor::default());
         let view_proj = self.camera.view_proj();
         let view_proj = bytemuck::cast_slice(view_proj.as_slice());
+        self.queue
+            .write_buffer_with(
+                &self.camera_uniform_buffer,
+                0,
+                NonZero::new(view_proj.len() as u64).unwrap(),
+            )
+            .unwrap()
+            .copy_from_slice(view_proj);
         for command in commands {
             let mut encoder = self
                 .device
                 .create_command_encoder(&CommandEncoderDescriptor::default());
-            self.queue
-                .write_buffer_with(
-                    &self.camera_uniform_buffer,
-                    0,
-                    NonZero::new(view_proj.len() as u64).unwrap(),
-                )
-                .unwrap()
-                .copy_from_slice(view_proj);
             let transform = bytemuck::cast_slice(command.transform.as_slice());
             self.queue
                 .write_buffer_with(
@@ -307,31 +266,15 @@ impl Context {
                     timestamp_writes: None,
                     occlusion_query_set: None,
                 });
-            rpass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
+            rpass.set_vertex_buffer(0, command.mesh.vertex.slice(..));
+            rpass.set_index_buffer(
+                command.mesh.index.slice(..),
+                IndexFormat::Uint16,
+            );
             rpass.set_pipeline(&self.render_pipeline);
             rpass.set_bind_group(0, &self.camera_bind_group, &[]);
             rpass.set_bind_group(1, &self.model_bind_group, &[]);
-            // for command in commands {
-            //     println!("{:?}", command.transform);
-            //     let transform =
-            //         bytemuck::cast_slice(command.transform.as_slice());
-            //     // self.queue.write_buffer(
-            //     //     &self.model_uniform_buffer,
-            //     //     0,
-            //     //     transform,
-            //     // );
-            //     self.queue
-            //         .write_buffer_with(
-            //             &self.model_uniform_buffer,
-            //             0,
-            //             NonZero::new(transform.len() as u64).unwrap(),
-            //         )
-            //         .unwrap()
-            //         .copy_from_slice(transform);
-            //     rpass.set_bind_group(1, &self.model_bind_group, &[]);
-            //     rpass.draw(0..3, 0..1);
-            // }
-            rpass.draw(0..3, 0..1);
+            rpass.draw_indexed(command.mesh.index_range.clone(), 0, 0..1);
             drop(rpass);
             self.queue.submit(Some(encoder.finish()));
         }
@@ -353,9 +296,3 @@ impl Context {
         self.surface.configure(&self.device, &self.config);
     }
 }
-
-#[derive(Clone, Copy)]
-pub struct MeshId(pub u32);
-
-#[derive(Clone, Copy)]
-pub struct ShaderId(pub u32);

@@ -4,7 +4,6 @@ use engine::app::App;
 use engine::canvas::Canvas;
 use engine::geometry::{Box, Ellipsoid};
 use engine::math::Transform;
-// use engine::math::Transform;
 
 fn main() {
     let app = App::new(State::new(), update, draw);
@@ -29,15 +28,14 @@ fn update(state: &mut State) {}
 fn draw(canvas: &mut Canvas, state: &State) {
     let t = state.start.elapsed().as_secs_f32();
     let angle = t * 2.0 * std::f32::consts::PI / 10.0;
-    let count = 3;
     canvas
         .group(|canvas| {
-            for i in 0..count {
-                canvas
-                    .draw(Box)
-                    .scale_x((count - i) as f32)
-                    .translate_y(i as f32);
-            }
+            canvas.draw(Ellipsoid).rotate_y(angle).translate_x(-2.0);
+            canvas
+                .draw(Box)
+                .scale(1.5, 1.5, 1.5)
+                .rotate_y(angle)
+                .translate_x(2.0);
         })
-        .rotate_y(angle);
+        .rotate_y(-angle);
 }
