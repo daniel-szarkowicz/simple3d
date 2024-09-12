@@ -139,7 +139,7 @@ impl Context {
                     entry_point: "vs_main",
                     buffers: &[
                         Vertex::BUFFER_LAYOUT,
-                        ObjectUniform::BUFFER_LAYOUT,
+                        InstanceData::BUFFER_LAYOUT,
                     ],
                     compilation_options: Default::default(),
                 },
@@ -361,16 +361,15 @@ impl From<&FirstPersonCamera> for CameraUniform {
 
 #[repr(C)]
 #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
-struct ObjectUniform {
+struct InstanceData {
     model: [[f32; 4]; 4],
     model_inv: [[f32; 4]; 4],
     color: [f32; 3],
-    _padding: [u8; 4],
 }
 
-type Instances = [ObjectUniform; 256];
+type Instances = [InstanceData; 256];
 
-impl ObjectUniform {
+impl InstanceData {
     pub const ATTRIB: [VertexAttribute; 9] = wgpu::vertex_attr_array![
         4 => Float32x4,
         5 => Float32x4,
@@ -384,19 +383,18 @@ impl ObjectUniform {
     ];
 
     pub const BUFFER_LAYOUT: VertexBufferLayout<'static> = VertexBufferLayout {
-        array_stride: size_of::<ObjectUniform>() as u64,
+        array_stride: size_of::<InstanceData>() as u64,
         step_mode: wgpu::VertexStepMode::Instance,
         attributes: &Self::ATTRIB,
     };
 }
 
-impl From<&DrawCommand> for ObjectUniform {
+impl From<&DrawCommand> for InstanceData {
     fn from(command: &DrawCommand) -> Self {
         Self {
             model: command.transform.into(),
             model_inv: command.transform.try_inverse().unwrap().into(),
             color: command.color,
-            _padding: [0; 4],
         }
     }
 }
