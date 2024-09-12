@@ -26,7 +26,7 @@ impl<State> App<State> {
         }
     }
 
-    pub fn run(self) -> ! {
+    pub fn run(self) {
         let event_loop = EventLoop::new().unwrap();
         let mut app = crate::backend::winit::WinitApp::new(
             self.user_state,
@@ -34,22 +34,10 @@ impl<State> App<State> {
             self.draw,
         );
         event_loop.run_app(&mut app).unwrap();
-        std::process::exit(0)
-        // let context = Rc::new(Context::new());
-        // let mut meshes = MeshManager::new(context.clone());
-        // let mut shaders = ShaderManager::new(context.clone());
-        // loop {
-        //     (self.update)(&mut self.user_state);
-        //     let mut canvas = Canvas::new(&mut meshes, &mut shaders);
-        //     (self.draw)(&mut canvas, &self.user_state);
-        //     let commands = canvas.commands;
-        //     context.render(commands);
-        //     thread::sleep(Duration::from_millis(100));
-        // }
     }
 }
 impl<State: AppState> App<State> {
-    pub fn run_with(state: State) -> ! {
+    pub fn run_with(state: State) {
         let app = App::new(state, State::update, State::draw);
         app.run()
     }
