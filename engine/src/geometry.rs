@@ -90,9 +90,9 @@ impl Polyhedron {
     fn normalize(&mut self) {
         for [x, y, z] in &mut self.vertices {
             let len = (x.powi(2) + y.powi(2) + z.powi(2)).sqrt();
-            *x /= len;
-            *y /= len;
-            *z /= len;
+            *x /= 2.0 * len;
+            *y /= 2.0 * len;
+            *z /= 2.0 * len;
         }
     }
 

@@ -132,10 +132,18 @@ impl Context {
 
         let camera = FirstPersonCamera::default();
 
+        let mut buf = [0u8; { 64 + 16 }];
+        buf[0..64].copy_from_slice(bytemuck::cast_slice(
+            camera.view_proj().as_slice(),
+        ));
+        buf[64..76].copy_from_slice(bytemuck::cast_slice(
+            camera.position().coords.as_slice(),
+        ));
+
         let camera_uniform_buffer =
             device.create_buffer_init(&BufferInitDescriptor {
                 label: None,
-                contents: bytemuck::cast_slice(camera.view_proj().as_slice()),
+                contents: &buf,
                 usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
             });
 
@@ -240,17 +248,21 @@ impl Context {
         let frame = self.surface.get_current_texture().unwrap();
         let view = frame.texture.create_view(&TextureViewDescriptor::default());
 
-        let view_proj = self.camera.view_proj();
-        let view_proj = bytemuck::cast_slice(view_proj.as_slice());
-
+        let mut buf = [0u8; { 64 + 16 }];
+        buf[0..64].copy_from_slice(bytemuck::cast_slice(
+            self.camera.view_proj().as_slice(),
+        ));
+        buf[64..76].copy_from_slice(bytemuck::cast_slice(
+            self.camera.position().coords.as_slice(),
+        ));
         self.queue
             .write_buffer_with(
                 &self.camera_uniform_buffer,
                 0,
-                NonZero::new(view_proj.len() as u64).unwrap(),
+                NonZero::new(buf.len() as u64).unwrap(),
             )
             .unwrap()
-            .copy_from_slice(view_proj);
+            .copy_from_slice(&buf);
         let mut color_load_op = wgpu::LoadOp::Clear(Color {
             r: 100.0 / 255.0,
             g: 149.0 / 255.0,

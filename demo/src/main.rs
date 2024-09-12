@@ -30,11 +30,7 @@ impl AppState for State {
         canvas
             .group(|canvas| {
                 canvas.draw(Ellipsoid).rotate_y(angle).translate_x(-2.0);
-                canvas
-                    .draw(Box)
-                    .scale(1.5, 1.5, 1.5)
-                    .rotate_y(angle)
-                    .translate_x(2.0);
+                canvas.draw(Box).rotate_y(angle).translate_x(2.0);
             })
             .rotate_y(angle / 2.0);
     }
