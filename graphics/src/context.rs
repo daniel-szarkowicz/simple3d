@@ -3,7 +3,7 @@ use std::{borrow::Cow, num::NonZero, sync::Arc};
 use nalgebra::Matrix4;
 use pollster::FutureExt;
 use wgpu::{
-    util::{BufferInitDescriptor, DeviceExt},
+    util::{BufferInitDescriptor, DeviceExt, RenderEncoder},
     BindGroup, Buffer, BufferDescriptor, BufferUsages, Color,
     CommandEncoderDescriptor, DepthBiasState, DepthStencilState, Device,
     Extent3d, IndexFormat, PresentMode, Queue,

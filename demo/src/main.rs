@@ -1,9 +1,9 @@
 use std::time::Instant;
 
-use engine::app::{App, AppState};
-use engine::canvas::Canvas;
-use engine::geometry::{Box, Ellipsoid};
-use engine::math::Transform;
+use graphics::app::{App, AppState};
+use graphics::canvas::Canvas;
+use graphics::geometry::{Box, Ellipsoid};
+use graphics::math::Transform;
 
 fn main() {
     App::run_with(State::new());
