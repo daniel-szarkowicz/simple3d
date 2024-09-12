@@ -75,6 +75,7 @@ pub struct DrawCommand {
     // pub shader: ShaderId,
     // pub transform: Mat4,
     pub transform: Matrix4<f32>,
+    pub color: [f32; 3],
 }
 
 impl Transform for DrawCommand {

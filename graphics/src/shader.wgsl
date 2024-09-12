@@ -3,16 +3,20 @@ struct Camera {
     position: vec3<f32>,
 }
 
-struct Object {
-    model: mat4x4<f32>,
-    model_inv: mat4x4<f32>,
-}
-
 @group(0) @binding(0)
 var<uniform> camera: Camera;
 
-@group(1) @binding(0)
-var<uniform> object: Object;
+struct InstanceIn {
+    @location(4) model_0: vec4<f32>,
+    @location(5) model_1: vec4<f32>,
+    @location(6) model_2: vec4<f32>,
+    @location(7) model_3: vec4<f32>,
+    @location(8) model_inv_0: vec4<f32>,
+    @location(9) model_inv_1: vec4<f32>,
+    @location(10) model_inv_2: vec4<f32>,
+    @location(11) model_inv_3: vec4<f32>,
+    @location(12) color: vec3<f32>,
+}
 
 struct VertexIn {
     @location(0) position: vec3<f32>,
@@ -23,16 +27,30 @@ struct VertexOut {
     @builtin(position) position: vec4<f32>,
     @location(0) normal: vec3<f32>,
     @location(1) view_dir: vec3<f32>,
+    @location(2) color: vec3<f32>,
 }
 
 
 @vertex
-fn vs_main(vtx_in: VertexIn) -> VertexOut {
-    let world_position = object.model * vec4(vtx_in.position, 1.0);
+fn vs_main(vtx_in: VertexIn, instance_in: InstanceIn) -> VertexOut {
+    let model = mat4x4<f32>(
+        instance_in.model_0,
+        instance_in.model_1,
+        instance_in.model_2,
+        instance_in.model_3,
+    );
+    let model_inv = mat4x4<f32>(
+        instance_in.model_inv_0,
+        instance_in.model_inv_1,
+        instance_in.model_inv_2,
+        instance_in.model_inv_3,
+    );
+
+    let world_position = model * vec4(vtx_in.position, 1.0);
     let position = camera.view_proj * world_position;
-    let normal = (vec4(vtx_in.normal, 1.0) * object.model_inv).xyz;
+    let normal = (vec4(vtx_in.normal, 1.0) * model_inv).xyz;
     let view_dir = camera.position * world_position.w - world_position.xyz;
-    return VertexOut(position, normal, view_dir);
+    return VertexOut(position, normal, view_dir, instance_in.color);
 }
 
 @fragment
@@ -45,6 +63,5 @@ fn fs_main(frag_in: VertexOut) -> @location(0) vec4<f32> {
     let ambient = max(dot(normal, view_dir), 0.0);
 
     let brightness = 0.7 * diffuse + 0.2 * ambient + 0.1;
-    let color = vec3<f32>(0.5, 0.5, 0.0);
-    return vec4(brightness * color, 1.0);
+    return vec4(brightness * frag_in.color, 1.0);
 }

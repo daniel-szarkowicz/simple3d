@@ -1,4 +1,6 @@
-use std::{any::TypeId, collections::HashMap, ops::Range, sync::Arc};
+use std::{
+    any::TypeId, cmp::Ordering, collections::HashMap, ops::Range, sync::Arc,
+};
 
 use bytemuck::{Pod, Zeroable};
 use wgpu::{
@@ -28,6 +30,7 @@ impl MeshManager {
 }
 
 fn load_mesh(device: &Device, mesh: Mesh) -> Arc<MeshBuffers> {
+    println!("loading mesh");
     let index_range = 0..mesh.indices.len() as u32;
     let vertex = device.create_buffer_init(&BufferInitDescriptor {
         label: None,
@@ -77,4 +80,24 @@ pub struct MeshBuffers {
     pub vertex: Buffer,
     pub index: Buffer,
     pub index_range: Range<u32>,
+}
+
+impl PartialEq for MeshBuffers {
+    fn eq(&self, other: &Self) -> bool {
+        self.cmp(other) == Ordering::Equal
+    }
+}
+
+impl PartialOrd for MeshBuffers {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Eq for MeshBuffers {}
+
+impl Ord for MeshBuffers {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        (self as *const MeshBuffers).cmp(&(other as *const MeshBuffers))
+    }
 }

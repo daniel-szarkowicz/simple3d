@@ -1,15 +1,15 @@
 use std::{borrow::Cow, num::NonZero, sync::Arc};
 
-use nalgebra::Matrix4;
+use bytemuck::Zeroable;
 use pollster::FutureExt;
 use wgpu::{
-    util::{BufferInitDescriptor, DeviceExt, RenderEncoder},
+    util::{BufferInitDescriptor, DeviceExt},
     BindGroup, Buffer, BufferDescriptor, BufferUsages, Color,
     CommandEncoderDescriptor, DepthBiasState, DepthStencilState, Device,
     Extent3d, IndexFormat, PresentMode, Queue,
     RenderPassDepthStencilAttachment, RenderPipeline, StencilState, Surface,
     SurfaceConfiguration, Texture, TextureDescriptor, TextureView,
-    TextureViewDescriptor,
+    TextureViewDescriptor, VertexAttribute, VertexBufferLayout,
 };
 use winit::{
     dpi::PhysicalSize, event::Event, event_loop::ActiveEventLoop,
@@ -30,13 +30,13 @@ pub struct Context {
     render_pipeline: RenderPipeline,
     queue: Queue,
     camera_uniform_buffer: Buffer,
-    model_uniform_buffer: Buffer,
     camera_bind_group: BindGroup,
-    model_bind_group: BindGroup,
     camera: FirstPersonCamera,
     meshes: MeshManager,
     depth_texture: Texture,
     depth_texture_view: TextureView,
+    instance_buffer: Buffer,
+    instances: Instances,
 }
 
 impl Context {
@@ -102,28 +102,10 @@ impl Context {
                 }],
             });
 
-        let model_bind_group_layout =
-            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                label: None,
-                entries: &[wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::VERTEX,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                }],
-            });
-
         let pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: None,
-                bind_group_layouts: &[
-                    &camera_bind_group_layout,
-                    &model_bind_group_layout,
-                ],
+                bind_group_layouts: &[&camera_bind_group_layout],
                 push_constant_ranges: &[],
             });
 
@@ -132,34 +114,21 @@ impl Context {
 
         let camera = FirstPersonCamera::default();
 
-        let mut buf = [0u8; { 64 + 16 }];
-        buf[0..64].copy_from_slice(bytemuck::cast_slice(
-            camera.view_proj().as_slice(),
-        ));
-        buf[64..76].copy_from_slice(bytemuck::cast_slice(
-            camera.position().coords.as_slice(),
-        ));
+        let camera_uniform_data = CameraUniform::from(&camera);
 
         let camera_uniform_buffer =
             device.create_buffer_init(&BufferInitDescriptor {
                 label: None,
-                contents: &buf,
+                contents: bytemuck::bytes_of(&camera_uniform_data),
                 usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
             });
 
-        let model_uniform_buffer = device.create_buffer(&BufferDescriptor {
+        let instance_buffer = device.create_buffer(&BufferDescriptor {
             label: None,
-            size: 128,
-            usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
+            size: size_of::<Instances>() as u64,
+            usage: BufferUsages::VERTEX | BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
-        // device.create_buffer_init(&BufferInitDescriptor {
-        //     label: None,
-        //     contents: bytemuck::cast_slice(
-        //         Matrix4::<f32>::identity().as_slice(),
-        //     ),
-        //     usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
-        // });
 
         let render_pipeline =
             device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -168,7 +137,10 @@ impl Context {
                 vertex: wgpu::VertexState {
                     module: &shader,
                     entry_point: "vs_main",
-                    buffers: &[Vertex::BUFFER_LAYOUT],
+                    buffers: &[
+                        Vertex::BUFFER_LAYOUT,
+                        ObjectUniform::BUFFER_LAYOUT,
+                    ],
                     compilation_options: Default::default(),
                 },
                 primitive: wgpu::PrimitiveState {
@@ -203,16 +175,6 @@ impl Context {
                 }],
             });
 
-        let model_bind_group =
-            device.create_bind_group(&wgpu::BindGroupDescriptor {
-                label: None,
-                layout: &model_bind_group_layout,
-                entries: &[wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: model_uniform_buffer.as_entire_binding(),
-                }],
-            });
-
         let mut config = surface
             .get_default_config(&adapter, size.width, size.height)
             .unwrap();
@@ -230,13 +192,13 @@ impl Context {
             render_pipeline,
             queue,
             camera_uniform_buffer,
-            model_uniform_buffer,
             camera_bind_group,
-            model_bind_group,
             camera,
             meshes,
             depth_texture,
             depth_texture_view,
+            instance_buffer,
+            instances: Zeroable::zeroed(),
         }
     }
 
@@ -244,25 +206,19 @@ impl Context {
         Canvas::new(&mut self.meshes)
     }
 
-    pub(crate) fn render(&self, commands: Vec<DrawCommand>) {
+    pub(crate) fn render(&mut self, mut commands: Vec<DrawCommand>) {
         let frame = self.surface.get_current_texture().unwrap();
         let view = frame.texture.create_view(&TextureViewDescriptor::default());
 
-        let mut buf = [0u8; { 64 + 16 }];
-        buf[0..64].copy_from_slice(bytemuck::cast_slice(
-            self.camera.view_proj().as_slice(),
-        ));
-        buf[64..76].copy_from_slice(bytemuck::cast_slice(
-            self.camera.position().coords.as_slice(),
-        ));
+        let camera_uniform_data = CameraUniform::from(&self.camera);
         self.queue
             .write_buffer_with(
                 &self.camera_uniform_buffer,
                 0,
-                NonZero::new(buf.len() as u64).unwrap(),
+                NonZero::new(size_of::<CameraUniform>() as u64).unwrap(),
             )
             .unwrap()
-            .copy_from_slice(&buf);
+            .copy_from_slice(bytemuck::bytes_of(&camera_uniform_data));
         let mut color_load_op = wgpu::LoadOp::Clear(Color {
             r: 100.0 / 255.0,
             g: 149.0 / 255.0,
@@ -270,25 +226,33 @@ impl Context {
             a: 1.0,
         });
         let mut depth_load_op = wgpu::LoadOp::Clear(1.0);
-        for command in commands {
+        commands.sort_unstable_by(|c1, c2| c1.mesh.cmp(&c2.mesh));
+        // TODO: store meshids in DrawCommand to fix this
+        let mut curr = commands[0].mesh.clone();
+        for batch in commands.split_inclusive(|cmd| {
+            if cmd.mesh != curr {
+                curr = cmd.mesh.clone();
+                true
+            } else {
+                false
+            }
+        }) {
+            for (i, cmd) in batch.iter().enumerate() {
+                self.instances[i] = cmd.into();
+            }
+            let instances: &[u8] =
+                bytemuck::cast_slice(&self.instances[0..batch.len()]);
             let mut encoder = self
                 .device
                 .create_command_encoder(&CommandEncoderDescriptor::default());
-            let mut buf = [0u8; 128];
-            buf[0..64].copy_from_slice(bytemuck::cast_slice(
-                command.transform.as_slice(),
-            ));
-            buf[64..128].copy_from_slice(bytemuck::cast_slice(
-                command.transform.try_inverse().unwrap().as_slice(),
-            ));
             self.queue
                 .write_buffer_with(
-                    &self.model_uniform_buffer,
+                    &self.instance_buffer,
                     0,
-                    NonZero::new(buf.len() as u64).unwrap(),
+                    NonZero::new(instances.len() as u64).unwrap(),
                 )
                 .unwrap()
-                .copy_from_slice(&buf);
+                .copy_from_slice(instances);
             let mut rpass =
                 encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                     label: None,
@@ -315,15 +279,19 @@ impl Context {
                     timestamp_writes: None,
                     occlusion_query_set: None,
                 });
-            rpass.set_vertex_buffer(0, command.mesh.vertex.slice(..));
+            rpass.set_vertex_buffer(0, batch[0].mesh.vertex.slice(..));
+            rpass.set_vertex_buffer(1, self.instance_buffer.slice(..));
             rpass.set_index_buffer(
-                command.mesh.index.slice(..),
+                batch[0].mesh.index.slice(..),
                 IndexFormat::Uint16,
             );
             rpass.set_pipeline(&self.render_pipeline);
             rpass.set_bind_group(0, &self.camera_bind_group, &[]);
-            rpass.set_bind_group(1, &self.model_bind_group, &[]);
-            rpass.draw_indexed(command.mesh.index_range.clone(), 0, 0..1);
+            rpass.draw_indexed(
+                batch[0].mesh.index_range.clone(),
+                0,
+                0..batch.len() as u32,
+            );
             drop(rpass);
             self.queue.submit(Some(encoder.finish()));
             color_load_op = wgpu::LoadOp::Load;
@@ -371,4 +339,64 @@ fn create_depth_texture(
     });
     let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
     (texture, view)
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+struct CameraUniform {
+    view_proj: [[f32; 4]; 4],
+    position: [f32; 3],
+    _padding: [u8; 4],
+}
+
+impl From<&FirstPersonCamera> for CameraUniform {
+    fn from(camera: &FirstPersonCamera) -> Self {
+        Self {
+            view_proj: camera.view_proj().into(),
+            position: camera.position().into(),
+            _padding: [0; 4],
+        }
+    }
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+struct ObjectUniform {
+    model: [[f32; 4]; 4],
+    model_inv: [[f32; 4]; 4],
+    color: [f32; 3],
+    _padding: [u8; 4],
+}
+
+type Instances = [ObjectUniform; 256];
+
+impl ObjectUniform {
+    pub const ATTRIB: [VertexAttribute; 9] = wgpu::vertex_attr_array![
+        4 => Float32x4,
+        5 => Float32x4,
+        6 => Float32x4,
+        7 => Float32x4,
+        8 => Float32x4,
+        9 => Float32x4,
+        10 => Float32x4,
+        11 => Float32x4,
+        12 => Float32x3,
+    ];
+
+    pub const BUFFER_LAYOUT: VertexBufferLayout<'static> = VertexBufferLayout {
+        array_stride: size_of::<ObjectUniform>() as u64,
+        step_mode: wgpu::VertexStepMode::Instance,
+        attributes: &Self::ATTRIB,
+    };
+}
+
+impl From<&DrawCommand> for ObjectUniform {
+    fn from(command: &DrawCommand) -> Self {
+        Self {
+            model: command.transform.into(),
+            model_inv: command.transform.try_inverse().unwrap().into(),
+            color: command.color,
+            _padding: [0; 4],
+        }
+    }
 }

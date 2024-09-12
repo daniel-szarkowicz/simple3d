@@ -26,8 +26,14 @@ impl<'c, 'cref> Drawing<'c, 'cref> {
                 mesh,
                 // shader,
                 transform: Matrix4::identity(),
+                color: [1.0, 1.0, 1.0],
             },
         }
+    }
+
+    pub fn color(mut self, color: [f32; 3]) -> Self {
+        self.command.color = color;
+        self
     }
 
     pub fn finish(self) {}
