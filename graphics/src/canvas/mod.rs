@@ -3,7 +3,7 @@ pub mod group;
 use std::sync::Arc;
 
 use crate::math::Transform;
-use crate::mesh::{MeshBuffers, MeshManager, MeshProvider};
+use crate::mesh::{MeshBuffers, MeshId, MeshManager, MeshProvider};
 use drawing::Drawing;
 use group::Group;
 use nalgebra::Matrix4;
@@ -71,7 +71,7 @@ impl<T: MeshProvider> Drawable for T {
 
 #[derive(Clone)]
 pub struct DrawCommand {
-    pub mesh: Arc<MeshBuffers>,
+    pub mesh_id: MeshId,
     // pub shader: ShaderId,
     // pub transform: Mat4,
     pub transform: Matrix4<f32>,

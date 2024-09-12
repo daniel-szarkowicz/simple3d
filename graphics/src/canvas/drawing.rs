@@ -8,7 +8,10 @@ use nalgebra::Matrix4;
 //     shader::DefaultShader,
 // };
 
-use crate::{math::Transform, mesh::MeshBuffers};
+use crate::{
+    math::Transform,
+    mesh::{MeshBuffers, MeshId},
+};
 
 use super::{Canvas, DrawCommand};
 
@@ -18,12 +21,12 @@ pub struct Drawing<'c, 'cref> {
 }
 
 impl<'c, 'cref> Drawing<'c, 'cref> {
-    pub fn new(canvas: &'cref mut Canvas<'c>, mesh: Arc<MeshBuffers>) -> Self {
+    pub fn new(canvas: &'cref mut Canvas<'c>, mesh_id: MeshId) -> Self {
         // let shader = canvas.shaders.get_or_insert(DefaultShader);
         Self {
             canvas,
             command: DrawCommand {
-                mesh,
+                mesh_id,
                 // shader,
                 transform: Matrix4::identity(),
                 color: [1.0, 1.0, 1.0],

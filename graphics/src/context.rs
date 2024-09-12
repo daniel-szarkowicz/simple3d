@@ -226,12 +226,11 @@ impl Context {
             a: 1.0,
         });
         let mut depth_load_op = wgpu::LoadOp::Clear(1.0);
-        commands.sort_unstable_by(|c1, c2| c1.mesh.cmp(&c2.mesh));
-        // TODO: store meshids in DrawCommand to fix this
-        let mut curr = commands[0].mesh.clone();
+        commands.sort_unstable_by_key(|c| c.mesh_id);
+        let mut curr = commands[0].mesh_id;
         for batch in commands.split_inclusive(|cmd| {
-            if cmd.mesh != curr {
-                curr = cmd.mesh.clone();
+            if cmd.mesh_id != curr {
+                curr = cmd.mesh_id;
                 true
             } else {
                 false
@@ -279,16 +278,17 @@ impl Context {
                     timestamp_writes: None,
                     occlusion_query_set: None,
                 });
-            rpass.set_vertex_buffer(0, batch[0].mesh.vertex.slice(..));
+            let mesh_buffers = self.meshes.get_by_id(batch[0].mesh_id);
+            rpass.set_vertex_buffer(0, mesh_buffers.vertex.slice(..));
             rpass.set_vertex_buffer(1, self.instance_buffer.slice(..));
             rpass.set_index_buffer(
-                batch[0].mesh.index.slice(..),
+                mesh_buffers.index.slice(..),
                 IndexFormat::Uint16,
             );
             rpass.set_pipeline(&self.render_pipeline);
             rpass.set_bind_group(0, &self.camera_bind_group, &[]);
             rpass.draw_indexed(
-                batch[0].mesh.index_range.clone(),
+                mesh_buffers.index_range.clone(),
                 0,
                 0..batch.len() as u32,
             );

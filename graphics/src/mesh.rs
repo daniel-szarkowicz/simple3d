@@ -9,27 +9,34 @@ use wgpu::{
 };
 
 pub struct MeshManager {
-    meshes: HashMap<TypeId, Arc<MeshBuffers>>,
+    mesh_ids: HashMap<TypeId, MeshId>,
+    meshes: Vec<MeshBuffers>,
     device: Arc<Device>,
 }
 
 impl MeshManager {
     pub fn new(device: Arc<Device>) -> Self {
         Self {
-            meshes: HashMap::new(),
+            mesh_ids: HashMap::new(),
+            meshes: Vec::new(),
             device,
         }
     }
 
-    pub fn get_or_insert<T: MeshProvider>(&mut self, _: T) -> Arc<MeshBuffers> {
-        self.meshes
-            .entry(TypeId::of::<T>())
-            .or_insert_with(|| load_mesh(&self.device, T::create_mesh()))
-            .clone()
+    pub fn get_or_insert<T: MeshProvider>(&mut self, _: T) -> MeshId {
+        *self.mesh_ids.entry(TypeId::of::<T>()).or_insert_with(|| {
+            let id = self.meshes.len();
+            self.meshes.push(load_mesh(&self.device, T::create_mesh()));
+            MeshId(id)
+        })
+    }
+
+    pub(crate) fn get_by_id(&self, id: MeshId) -> &MeshBuffers {
+        &self.meshes[id.0]
     }
 }
 
-fn load_mesh(device: &Device, mesh: Mesh) -> Arc<MeshBuffers> {
+fn load_mesh(device: &Device, mesh: Mesh) -> MeshBuffers {
     println!("loading mesh");
     let index_range = 0..mesh.indices.len() as u32;
     let vertex = device.create_buffer_init(&BufferInitDescriptor {
@@ -42,11 +49,11 @@ fn load_mesh(device: &Device, mesh: Mesh) -> Arc<MeshBuffers> {
         contents: bytemuck::cast_slice(&mesh.indices),
         usage: BufferUsages::INDEX,
     });
-    Arc::new(MeshBuffers {
+    MeshBuffers {
         vertex,
         index,
         index_range,
-    })
+    }
 }
 
 #[repr(C)]
@@ -71,6 +78,9 @@ pub struct Mesh {
     pub vertices: Vec<Vertex>,
     pub indices: Vec<u16>,
 }
+
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub struct MeshId(usize);
 
 pub trait MeshProvider: 'static + Copy {
     fn create_mesh() -> Mesh;
