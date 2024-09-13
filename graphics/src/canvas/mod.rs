@@ -2,7 +2,7 @@ pub mod drawing;
 pub mod group;
 
 use crate::math::Transform;
-use crate::mesh::{MeshId, MeshManager, MeshProvider, PNVertex};
+use crate::mesh::{MeshId, MeshManager, MeshProvider};
 use drawing::Drawing;
 use group::Group;
 use nalgebra::Matrix4;
@@ -11,7 +11,6 @@ pub struct Canvas<'c> {
     pub(crate) commands: Vec<DrawCommand>,
     meshes: &'c mut MeshManager,
     // shaders: &'c mut ShaderManager,
-    // queue: &'c Queue,
 }
 
 impl<'c> Canvas<'c> {
@@ -19,13 +18,11 @@ impl<'c> Canvas<'c> {
     pub fn new(
         meshes: &'c mut MeshManager,
         // shaders: &'c mut ShaderManager,
-        // queue: &'c Queue,
     ) -> Self {
         Self {
             commands: vec![],
             meshes,
             // shaders,
-            // queue,
         }
     }
 
@@ -72,7 +69,6 @@ impl<T: MeshProvider> Drawable for T {
 pub struct DrawCommand {
     pub mesh_id: MeshId,
     // pub shader: ShaderId,
-    // pub transform: Mat4,
     pub transform: Matrix4<f32>,
     pub color: [f32; 3],
 }

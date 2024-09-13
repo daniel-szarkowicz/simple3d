@@ -102,7 +102,7 @@ pub struct Mesh<V: Vertex> {
     pub indices: Vec<u16>,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct MeshId(usize, pub TypeId);
 
 pub trait MeshProvider: 'static + Copy {

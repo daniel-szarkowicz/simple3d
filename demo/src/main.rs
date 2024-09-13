@@ -1,3 +1,5 @@
+use std::time::Instant;
+
 use demo::omt::{rand_aabbs, Leaf, RTree};
 use graphics::app::{App, AppState};
 use graphics::canvas::Canvas;
@@ -14,7 +16,8 @@ struct State {
 
 impl State {
     fn new() -> Self {
-        let leaves = rand_aabbs(100).into_iter().map(Leaf::new_empty).collect();
+        let leaves =
+            rand_aabbs(1000).into_iter().map(Leaf::new_empty).collect();
         Self {
             tree: RTree::new(leaves),
         }
@@ -26,11 +29,19 @@ impl AppState for State {
 
     fn draw(&self, canvas: &mut Canvas) {
         let height = self.tree.height();
+        let colors = [
+            [1.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0],
+            [0.0, 0.0, 1.0],
+            [1.0, 1.0, 0.0],
+            [0.0, 1.0, 1.0],
+            [1.0, 0.0, 1.0],
+        ];
         for (aabb, level) in self.tree.aabbs() {
             let size = aabb.size().map(|f| f as f32);
             let pos = aabb.pos().map(|f| f as f32);
             let drawing = if level < height - 1 {
-                canvas.draw(BoxLines)
+                canvas.draw(BoxLines).color(colors[level])
             } else {
                 canvas.draw(Box)
             };

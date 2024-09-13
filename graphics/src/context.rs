@@ -2,7 +2,6 @@ use std::{
     any::TypeId, borrow::Cow, collections::HashMap, num::NonZero, sync::Arc,
 };
 
-use bytemuck::Zeroable;
 use pollster::FutureExt;
 use wgpu::{
     util::{BufferInitDescriptor, DeviceExt},
@@ -38,7 +37,6 @@ pub struct Context {
     depth_texture: Texture,
     depth_texture_view: TextureView,
     instance_buffer: Buffer,
-    instances: Instances,
 }
 
 impl Context {
@@ -195,7 +193,6 @@ impl Context {
             depth_texture,
             depth_texture_view,
             instance_buffer,
-            instances: Zeroable::zeroed(),
         }
     }
 
@@ -203,7 +200,7 @@ impl Context {
         Canvas::new(&mut self.meshes)
     }
 
-    pub(crate) fn render(&mut self, mut commands: Vec<DrawCommand>) {
+    pub(crate) fn render(&mut self, commands: Vec<DrawCommand>) {
         let frame = self.surface.get_current_texture().unwrap();
         let view = frame.texture.create_view(&TextureViewDescriptor::default());
 
@@ -223,21 +220,21 @@ impl Context {
             a: 1.0,
         });
         let mut depth_load_op = wgpu::LoadOp::Clear(1.0);
-        commands.sort_unstable_by_key(|c| c.mesh_id);
-        let mut curr = commands[0].mesh_id;
-        for batch in commands.split_inclusive(|cmd| {
-            if cmd.mesh_id != curr {
-                curr = cmd.mesh_id;
-                true
-            } else {
-                false
-            }
-        }) {
-            for (i, cmd) in batch.iter().enumerate() {
-                self.instances[i] = cmd.into();
-            }
-            let instances: &[u8] =
-                bytemuck::cast_slice(&self.instances[0..batch.len()]);
+        let mut batches = HashMap::new();
+        for command in commands {
+            batches
+                .entry(command.mesh_id)
+                .or_insert_with(Vec::new)
+                .push(InstanceData::from(&command));
+        }
+        for (mesh_id, instance_batch) in
+            batches.iter().flat_map(|(mesh_id, instances)| {
+                instances
+                    .chunks(256)
+                    .map(move |instance| (mesh_id, instance))
+            })
+        {
+            let instance_batch_bytes = bytemuck::cast_slice(instance_batch);
             let mut encoder = self
                 .device
                 .create_command_encoder(&CommandEncoderDescriptor::default());
@@ -245,10 +242,10 @@ impl Context {
                 .write_buffer_with(
                     &self.instance_buffer,
                     0,
-                    NonZero::new(instances.len() as u64).unwrap(),
+                    NonZero::new(instance_batch_bytes.len() as u64).unwrap(),
                 )
                 .unwrap()
-                .copy_from_slice(instances);
+                .copy_from_slice(instance_batch_bytes);
             let mut rpass =
                 encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                     label: None,
@@ -275,25 +272,96 @@ impl Context {
                     timestamp_writes: None,
                     occlusion_query_set: None,
                 });
-            let mesh_buffers = self.meshes.get_by_id(batch[0].mesh_id);
+            let mesh_buffers = self.meshes.get_by_id(*mesh_id);
             rpass.set_vertex_buffer(0, mesh_buffers.vertex.slice(..));
             rpass.set_vertex_buffer(1, self.instance_buffer.slice(..));
             rpass.set_index_buffer(
                 mesh_buffers.index.slice(..),
                 IndexFormat::Uint16,
             );
-            rpass.set_pipeline(&self.render_pipelines[&batch[0].mesh_id.1]);
+            rpass.set_pipeline(&self.render_pipelines[&mesh_id.1]);
             rpass.set_bind_group(0, &self.camera_bind_group, &[]);
             rpass.draw_indexed(
                 mesh_buffers.index_range.clone(),
                 0,
-                0..batch.len() as u32,
+                0..instance_batch.len() as u32,
             );
             drop(rpass);
             self.queue.submit(Some(encoder.finish()));
             color_load_op = wgpu::LoadOp::Load;
             depth_load_op = wgpu::LoadOp::Load;
         }
+        // commands.sort_unstable_by_key(|c| c.mesh_id);
+        // let mut curr = commands[0].mesh_id;
+        // for batch in commands.split_inclusive(|cmd| {
+        //     if cmd.mesh_id != curr {
+        //         curr = cmd.mesh_id;
+        //         true
+        //     } else {
+        //         false
+        //     }
+        // }) {
+        //     for (i, cmd) in batch.iter().enumerate() {
+        //         self.instances[i] = cmd.into();
+        //     }
+        //     let instances: &[u8] =
+        //         bytemuck::cast_slice(&self.instances[0..batch.len()]);
+        //     let mut encoder = self
+        //         .device
+        //         .create_command_encoder(&CommandEncoderDescriptor::default());
+        //     self.queue
+        //         .write_buffer_with(
+        //             &self.instance_buffer,
+        //             0,
+        //             NonZero::new(instances.len() as u64).unwrap(),
+        //         )
+        //         .unwrap()
+        //         .copy_from_slice(instances);
+        //     let mut rpass =
+        //         encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+        //             label: None,
+        //             color_attachments: &[Some(
+        //                 wgpu::RenderPassColorAttachment {
+        //                     view: &view,
+        //                     resolve_target: None,
+        //                     ops: wgpu::Operations {
+        //                         load: color_load_op,
+        //                         store: wgpu::StoreOp::Store,
+        //                     },
+        //                 },
+        //             )],
+        //             depth_stencil_attachment: Some(
+        //                 RenderPassDepthStencilAttachment {
+        //                     view: &self.depth_texture_view,
+        //                     depth_ops: Some(wgpu::Operations {
+        //                         load: depth_load_op,
+        //                         store: wgpu::StoreOp::Store,
+        //                     }),
+        //                     stencil_ops: None,
+        //                 },
+        //             ),
+        //             timestamp_writes: None,
+        //             occlusion_query_set: None,
+        //         });
+        //     let mesh_buffers = self.meshes.get_by_id(batch[0].mesh_id);
+        //     rpass.set_vertex_buffer(0, mesh_buffers.vertex.slice(..));
+        //     rpass.set_vertex_buffer(1, self.instance_buffer.slice(..));
+        //     rpass.set_index_buffer(
+        //         mesh_buffers.index.slice(..),
+        //         IndexFormat::Uint16,
+        //     );
+        //     rpass.set_pipeline(&self.render_pipelines[&batch[0].mesh_id.1]);
+        //     rpass.set_bind_group(0, &self.camera_bind_group, &[]);
+        //     rpass.draw_indexed(
+        //         mesh_buffers.index_range.clone(),
+        //         0,
+        //         0..batch.len() as u32,
+        //     );
+        //     drop(rpass);
+        //     self.queue.submit(Some(encoder.finish()));
+        //     color_load_op = wgpu::LoadOp::Load;
+        //     depth_load_op = wgpu::LoadOp::Load;
+        // }
         frame.present();
         self.window.request_redraw();
     }
@@ -344,7 +412,7 @@ fn create_render_pipeline<V: Vertex>(
         }),
         multisample: wgpu::MultisampleState::default(),
         fragment: Some(wgpu::FragmentState {
-            module: &shader,
+            module: shader,
             entry_point: "fs_main",
             compilation_options: Default::default(),
             targets: &[Some(swapchain_format.into())],
