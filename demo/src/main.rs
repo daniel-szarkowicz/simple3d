@@ -36,6 +36,7 @@ impl AppState for State {
                 .draw(Box)
                 .scale(size[0], size[1], size[2])
                 .translate(pos[0], pos[1], pos[2]);
+            // canvas.draw(BoxLines);
         }
         // let t = self.start.elapsed().as_secs_f32();
         // let angle = t * 2.0 * std::f32::consts::PI / 5.0;

@@ -19,7 +19,7 @@ use winit::{
 use crate::{
     camera::FirstPersonCamera,
     canvas::{Canvas, DrawCommand},
-    mesh::{MeshManager, Vertex},
+    mesh::{MeshManager, PNVertex},
 };
 
 pub struct Context {
@@ -138,7 +138,7 @@ impl Context {
                     module: &shader,
                     entry_point: "vs_main",
                     buffers: &[
-                        Vertex::BUFFER_LAYOUT,
+                        PNVertex::BUFFER_LAYOUT,
                         InstanceData::BUFFER_LAYOUT,
                     ],
                     compilation_options: Default::default(),

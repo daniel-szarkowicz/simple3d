@@ -3,7 +3,7 @@ pub mod group;
 use std::sync::Arc;
 
 use crate::math::Transform;
-use crate::mesh::{MeshBuffers, MeshId, MeshManager, MeshProvider};
+use crate::mesh::{MeshBuffers, MeshId, MeshManager, MeshProvider, PNVertex};
 use drawing::Drawing;
 use group::Group;
 use nalgebra::Matrix4;
@@ -59,7 +59,7 @@ pub trait Drawable {
     ) -> Drawing<'c, 'cref>;
 }
 
-impl<T: MeshProvider> Drawable for T {
+impl<T: MeshProvider<Vertex = PNVertex>> Drawable for T {
     fn draw<'c, 'cref>(
         &self,
         canvas: &'cref mut Canvas<'c>,

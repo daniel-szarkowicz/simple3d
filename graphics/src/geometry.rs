@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 
-use crate::mesh::{Mesh, MeshProvider, Vertex};
+use crate::mesh::{Mesh, MeshProvider, PNVertex};
 
 #[derive(Clone, Copy)]
 pub struct Box;
@@ -8,39 +8,43 @@ pub struct Box;
 #[derive(Clone, Copy)]
 pub struct Ellipsoid;
 
+// #[derive(Clone, Copy)]
+// pub struct BoxLines;
+
 impl MeshProvider for Box {
-    fn create_mesh() -> Mesh {
+    type Vertex = PNVertex;
+    fn create_mesh() -> Mesh<Self::Vertex> {
         #[rustfmt::skip]
         let vertices = vec![
-           Vertex { position: [ 0.5,  0.5,  0.5], normal: [ 0.0,  0.0,  1.0,] },
-           Vertex { position: [-0.5,  0.5,  0.5], normal: [ 0.0,  0.0,  1.0,] },
-           Vertex { position: [ 0.5, -0.5,  0.5], normal: [ 0.0,  0.0,  1.0,] },
-           Vertex { position: [-0.5, -0.5,  0.5], normal: [ 0.0,  0.0,  1.0,] },
+           PNVertex { position: [ 0.5,  0.5,  0.5], normal: [ 0.0,  0.0,  1.0,] },
+           PNVertex { position: [-0.5,  0.5,  0.5], normal: [ 0.0,  0.0,  1.0,] },
+           PNVertex { position: [ 0.5, -0.5,  0.5], normal: [ 0.0,  0.0,  1.0,] },
+           PNVertex { position: [-0.5, -0.5,  0.5], normal: [ 0.0,  0.0,  1.0,] },
 
-           Vertex { position: [-0.5,  0.5, -0.5], normal: [ 0.0,  0.0, -1.0,] },
-           Vertex { position: [ 0.5,  0.5, -0.5], normal: [ 0.0,  0.0, -1.0,] },
-           Vertex { position: [-0.5, -0.5, -0.5], normal: [ 0.0,  0.0, -1.0,] },
-           Vertex { position: [ 0.5, -0.5, -0.5], normal: [ 0.0,  0.0, -1.0,] },
+           PNVertex { position: [-0.5,  0.5, -0.5], normal: [ 0.0,  0.0, -1.0,] },
+           PNVertex { position: [ 0.5,  0.5, -0.5], normal: [ 0.0,  0.0, -1.0,] },
+           PNVertex { position: [-0.5, -0.5, -0.5], normal: [ 0.0,  0.0, -1.0,] },
+           PNVertex { position: [ 0.5, -0.5, -0.5], normal: [ 0.0,  0.0, -1.0,] },
 
-           Vertex { position: [ 0.5,  0.5,  0.5], normal: [ 1.0,  0.0,  0.0,] },
-           Vertex { position: [ 0.5, -0.5,  0.5], normal: [ 1.0,  0.0,  0.0,] },
-           Vertex { position: [ 0.5,  0.5, -0.5], normal: [ 1.0,  0.0,  0.0,] },
-           Vertex { position: [ 0.5, -0.5, -0.5], normal: [ 1.0,  0.0,  0.0,] },
+           PNVertex { position: [ 0.5,  0.5,  0.5], normal: [ 1.0,  0.0,  0.0,] },
+           PNVertex { position: [ 0.5, -0.5,  0.5], normal: [ 1.0,  0.0,  0.0,] },
+           PNVertex { position: [ 0.5,  0.5, -0.5], normal: [ 1.0,  0.0,  0.0,] },
+           PNVertex { position: [ 0.5, -0.5, -0.5], normal: [ 1.0,  0.0,  0.0,] },
 
-           Vertex { position: [-0.5, -0.5,  0.5], normal: [-1.0,  0.0,  0.0,] },
-           Vertex { position: [-0.5,  0.5,  0.5], normal: [-1.0,  0.0,  0.0,] },
-           Vertex { position: [-0.5, -0.5, -0.5], normal: [-1.0,  0.0,  0.0,] },
-           Vertex { position: [-0.5,  0.5, -0.5], normal: [-1.0,  0.0,  0.0,] },
+           PNVertex { position: [-0.5, -0.5,  0.5], normal: [-1.0,  0.0,  0.0,] },
+           PNVertex { position: [-0.5,  0.5,  0.5], normal: [-1.0,  0.0,  0.0,] },
+           PNVertex { position: [-0.5, -0.5, -0.5], normal: [-1.0,  0.0,  0.0,] },
+           PNVertex { position: [-0.5,  0.5, -0.5], normal: [-1.0,  0.0,  0.0,] },
 
-           Vertex { position: [ 0.5,  0.5,  0.5], normal: [ 0.0,  1.0,  0.0,] },
-           Vertex { position: [ 0.5,  0.5, -0.5], normal: [ 0.0,  1.0,  0.0,] },
-           Vertex { position: [-0.5,  0.5,  0.5], normal: [ 0.0,  1.0,  0.0,] },
-           Vertex { position: [-0.5,  0.5, -0.5], normal: [ 0.0,  1.0,  0.0,] },
+           PNVertex { position: [ 0.5,  0.5,  0.5], normal: [ 0.0,  1.0,  0.0,] },
+           PNVertex { position: [ 0.5,  0.5, -0.5], normal: [ 0.0,  1.0,  0.0,] },
+           PNVertex { position: [-0.5,  0.5,  0.5], normal: [ 0.0,  1.0,  0.0,] },
+           PNVertex { position: [-0.5,  0.5, -0.5], normal: [ 0.0,  1.0,  0.0,] },
 
-           Vertex { position: [ 0.5, -0.5, -0.5], normal: [ 0.0, -1.0,  0.0,] },
-           Vertex { position: [ 0.5, -0.5,  0.5], normal: [ 0.0, -1.0,  0.0,] },
-           Vertex { position: [-0.5, -0.5, -0.5], normal: [ 0.0, -1.0,  0.0,] },
-           Vertex { position: [-0.5, -0.5,  0.5], normal: [ 0.0, -1.0,  0.0,] },
+           PNVertex { position: [ 0.5, -0.5, -0.5], normal: [ 0.0, -1.0,  0.0,] },
+           PNVertex { position: [ 0.5, -0.5,  0.5], normal: [ 0.0, -1.0,  0.0,] },
+           PNVertex { position: [-0.5, -0.5, -0.5], normal: [ 0.0, -1.0,  0.0,] },
+           PNVertex { position: [-0.5, -0.5,  0.5], normal: [ 0.0, -1.0,  0.0,] },
         ];
         #[rustfmt::skip]
         let indices = vec![
@@ -56,11 +60,12 @@ impl MeshProvider for Box {
 }
 
 impl MeshProvider for Ellipsoid {
-    fn create_mesh() -> Mesh {
+    type Vertex = PNVertex;
+    fn create_mesh() -> Mesh<Self::Vertex> {
         let Polyhedron { vertices, faces } = icosphere(3);
         let vertices = vertices
             .into_iter()
-            .map(|p| Vertex {
+            .map(|p| PNVertex {
                 position: p,
                 normal: p,
             })
@@ -72,6 +77,30 @@ impl MeshProvider for Ellipsoid {
         Mesh { vertices, indices }
     }
 }
+
+// impl LMeshProvider for BoxLines {
+//     fn create_mesh() -> LMesh {
+//         #[rustfmt::skip]
+//         let vertices = vec![
+//             LVertex { position: [ 0.5,  0.5,  0.5] },
+//             LVertex { position: [-0.5,  0.5,  0.5] },
+//             LVertex { position: [ 0.5, -0.5,  0.5] },
+//             LVertex { position: [-0.5, -0.5,  0.5] },
+
+//             LVertex { position: [-0.5,  0.5, -0.5] },
+//             LVertex { position: [ 0.5,  0.5, -0.5] },
+//             LVertex { position: [-0.5, -0.5, -0.5] },
+//             LVertex { position: [ 0.5, -0.5, -0.5] },
+//         ];
+//         #[rustfmt::skip]
+//         let indices = vec![
+//             0, 1, 1, 3, 3, 2, 2, 0,
+//             4, 5, 5, 7, 7, 6, 6, 4,
+//             0, 5, 1, 4, 3, 6, 2, 7,
+//         ];
+//         LMesh { vertices, indices }
+//     }
+// }
 
 struct Polyhedron {
     vertices: Vec<[f32; 3]>,
