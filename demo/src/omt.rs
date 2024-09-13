@@ -19,7 +19,7 @@ pub struct Leaf<T> {
     data: T,
 }
 
-const MAX_NODE_SIZE: usize = 10;
+const MAX_NODE_SIZE: usize = 6;
 
 impl<T> RTree<T> {
     pub fn new(leaves: Vec<Leaf<T>>) -> Self {
@@ -206,7 +206,7 @@ pub fn rand_aabbs(n: usize) -> Vec<AABB> {
 }
 
 pub fn rand_aabb() -> AABB {
-    let pos = rand::random::<[f64; 3]>().map(|p| 10.0 * p);
+    let pos = rand::random::<[f64; 3]>().map(|p| 20.0 * p);
     let size = rand::random::<[f64; 3]>().map(|s| 0.1 + s * 0.1);
     AABB {
         min: [0, 1, 2].map(|i| pos[i] - size[i]),

@@ -133,7 +133,7 @@ impl Context {
 
         let instance_buffer = device.create_buffer(&BufferDescriptor {
             label: None,
-            size: size_of::<Instances>() as u64,
+            size: (size_of::<InstanceData>() * MAX_INSTANCE_COUNT) as u64,
             usage: BufferUsages::VERTEX | BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
@@ -230,7 +230,7 @@ impl Context {
         for (mesh_id, instance_batch) in
             batches.iter().flat_map(|(mesh_id, instances)| {
                 instances
-                    .chunks(256)
+                    .chunks(MAX_INSTANCE_COUNT)
                     .map(move |instance| (mesh_id, instance))
             })
         {
@@ -463,6 +463,8 @@ impl From<&FirstPersonCamera> for CameraUniform {
     }
 }
 
+const MAX_INSTANCE_COUNT: usize = 1024;
+
 #[repr(C)]
 #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
 struct InstanceData {
@@ -470,8 +472,6 @@ struct InstanceData {
     model_inv: [[f32; 4]; 4],
     color: [f32; 3],
 }
-
-type Instances = [InstanceData; 256];
 
 impl InstanceData {
     pub const ATTRIB: [VertexAttribute; 9] = wgpu::vertex_attr_array![
