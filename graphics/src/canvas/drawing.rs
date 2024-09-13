@@ -1,17 +1,6 @@
-use std::sync::Arc;
-
 use nalgebra::Matrix4;
 
-// use crate::{
-//     context::MeshId,
-//     // math::{Mat4, Transform},
-//     shader::DefaultShader,
-// };
-
-use crate::{
-    math::Transform,
-    mesh::{MeshBuffers, MeshId},
-};
+use crate::{math::Transform, mesh::MeshId};
 
 use super::{Canvas, DrawCommand};
 

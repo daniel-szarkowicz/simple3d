@@ -1,6 +1,4 @@
-use std::{rc::Rc, thread, time::Duration};
-
-use winit::{event_loop::EventLoop, platform::x11::EventLoopBuilderExtX11};
+use winit::event_loop::EventLoop;
 
 use crate::canvas::Canvas;
 

@@ -1,9 +1,8 @@
 pub mod drawing;
 pub mod group;
-use std::sync::Arc;
 
 use crate::math::Transform;
-use crate::mesh::{MeshBuffers, MeshId, MeshManager, MeshProvider, PNVertex};
+use crate::mesh::{MeshId, MeshManager, MeshProvider, PNVertex};
 use drawing::Drawing;
 use group::Group;
 use nalgebra::Matrix4;
@@ -38,7 +37,7 @@ impl<'c> Canvas<'c> {
         &'cref mut self,
         group_fn: impl FnOnce(&mut Canvas),
     ) -> Group<'c, 'cref> {
-        let mut canv = Canvas::new(&mut self.meshes);
+        let mut canv = Canvas::new(self.meshes);
         group_fn(&mut canv);
         let commands = canv.commands;
         Group::new(self, commands)

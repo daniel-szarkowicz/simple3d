@@ -1,9 +1,7 @@
-use std::time::Instant;
-
 use demo::omt::{rand_aabbs, Leaf, RTree};
 use graphics::app::{App, AppState};
 use graphics::canvas::Canvas;
-use graphics::geometry::{Box, Ellipsoid};
+use graphics::geometry::Box;
 use graphics::math::Transform;
 
 fn main() {
@@ -11,7 +9,6 @@ fn main() {
 }
 
 struct State {
-    start: Instant,
     tree: RTree<()>,
 }
 
@@ -19,7 +16,6 @@ impl State {
     fn new() -> Self {
         let leaves = rand_aabbs(100).into_iter().map(Leaf::new_empty).collect();
         Self {
-            start: Instant::now(),
             tree: RTree::new(leaves),
         }
     }

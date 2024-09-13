@@ -58,7 +58,7 @@ impl<State> ApplicationHandler for WinitApp<State> {
 
     fn device_event(
         &mut self,
-        event_loop: &winit::event_loop::ActiveEventLoop,
+        _event_loop: &winit::event_loop::ActiveEventLoop,
         device_id: winit::event::DeviceId,
         event: winit::event::DeviceEvent,
     ) {
@@ -67,7 +67,7 @@ impl<State> ApplicationHandler for WinitApp<State> {
         );
     }
 
-    fn exiting(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
+    fn exiting(&mut self, _event_loop: &winit::event_loop::ActiveEventLoop) {
         self.context = None;
     }
 }

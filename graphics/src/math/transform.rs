@@ -1,6 +1,4 @@
-use nalgebra::{
-    Matrix4, Rotation3, Scale3, Translation3, Unit, UnitVector3, Vector3,
-};
+use nalgebra::{Matrix4, Rotation3, Scale3, Translation3, Unit, Vector3};
 
 use super::Float;
 

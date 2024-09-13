@@ -1,6 +1,4 @@
-use std::{
-    any::TypeId, cmp::Ordering, collections::HashMap, ops::Range, sync::Arc,
-};
+use std::{any::TypeId, collections::HashMap, ops::Range, sync::Arc};
 
 use bytemuck::{Pod, Zeroable};
 use wgpu::{
