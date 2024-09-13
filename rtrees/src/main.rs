@@ -1,11 +1,13 @@
 use std::time::Instant;
 
-use demo::omt::{rand_aabbs, Leaf, RTree as Omt};
-use demo::rtree::RTree;
 use graphics::app::{App, AppState};
 use graphics::canvas::Canvas;
 use graphics::geometry::{Box, BoxLines};
 use graphics::math::Transform;
+mod omt;
+mod rtree;
+use omt::{rand_aabbs, Leaf, RTree as Omt};
+use rtree::RTree;
 
 fn main() {
     App::run_with(State::new());
@@ -37,7 +39,7 @@ impl AppState for State {
     fn update(&mut self) {}
 
     fn draw(&self, canvas: &mut Canvas) {
-        let height = self.omt.height().max(self.rtree.height() + 1);
+        let height = self.omt.height().max(self.rtree.height());
         let t = self.start.elapsed().as_secs_f32() / 5.0;
         let max_height = t as usize % height;
         let angle = t.to_radians() / 2.0 * 360.0;
@@ -72,7 +74,9 @@ impl AppState for State {
                 }
             })
             .rotate_y(angle)
-            .translate_x(15.0);
+            .translate_x(15.0)
+            .translate_z(40.0)
+            .translate_y(-20.0);
         canvas
             .group(|canvas| {
                 for (i, (level, aabb)) in
@@ -92,6 +96,8 @@ impl AppState for State {
                 }
             })
             .rotate_y(angle)
-            .translate_x(-15.0);
+            .translate_x(-15.0)
+            .translate_z(40.0)
+            .translate_y(-20.0);
     }
 }
