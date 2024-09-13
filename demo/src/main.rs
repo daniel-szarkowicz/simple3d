@@ -25,11 +25,16 @@ impl AppState for State {
     fn update(&mut self) {}
 
     fn draw(&self, canvas: &mut Canvas) {
-        for aabb in self.tree.aabbs() {
+        let height = self.tree.height();
+        for (aabb, level) in self.tree.aabbs() {
             let size = aabb.size().map(|f| f as f32);
             let pos = aabb.pos().map(|f| f as f32);
-            canvas
-                .draw(BoxLines)
+            let drawing = if level < height - 1 {
+                canvas.draw(BoxLines)
+            } else {
+                canvas.draw(Box)
+            };
+            drawing
                 .scale(size[0], size[1], size[2])
                 .translate(pos[0], pos[1], pos[2]);
             // canvas.draw(BoxLines);

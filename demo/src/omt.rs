@@ -110,6 +110,10 @@ impl<T> RTree<T> {
         AABBS::new(self)
     }
 
+    pub fn height(&self) -> usize {
+        self.layers.len() + 1
+    }
+
     fn query<'a>(&'a self, aabb: &AABB) -> Query<'a, T> {
         // Query::new(self, aabb)
         todo!()
@@ -133,13 +137,13 @@ impl<'a, T> AABBS<'a, T> {
 }
 
 impl<'a, T> Iterator for AABBS<'a, T> {
-    type Item = &'a AABB;
+    type Item = (&'a AABB, usize);
 
     fn next(&mut self) -> Option<Self::Item> {
         if let Some(layer) = self.tree.layers.get(self.level) {
             if let Some(node) = layer.get(self.index) {
                 self.index += 1;
-                Some(&node.aabb)
+                Some((&node.aabb, self.level))
             } else {
                 self.level += 1;
                 self.index = 0;
@@ -147,7 +151,7 @@ impl<'a, T> Iterator for AABBS<'a, T> {
             }
         } else if let Some(leaf) = self.tree.leaves.get(self.index) {
             self.index += 1;
-            Some(&leaf.aabb)
+            Some((&leaf.aabb, self.level))
         } else {
             None
         }
