@@ -58,7 +58,7 @@ pub trait Drawable {
     ) -> Drawing<'c, 'cref>;
 }
 
-impl<T: MeshProvider<Vertex = PNVertex>> Drawable for T {
+impl<T: MeshProvider> Drawable for T {
     fn draw<'c, 'cref>(
         &self,
         canvas: &'cref mut Canvas<'c>,

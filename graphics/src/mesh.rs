@@ -3,8 +3,12 @@ use std::{any::TypeId, collections::HashMap, ops::Range, sync::Arc};
 use bytemuck::{Pod, Zeroable};
 use wgpu::{
     util::{BufferInitDescriptor, DeviceExt},
-    Buffer, BufferUsages, Device, VertexAttribute, VertexBufferLayout,
+    Buffer, BufferUsages, Device, PrimitiveTopology, VertexAttribute,
+    VertexBufferLayout,
 };
+
+// VertexType -> index
+//
 
 pub struct MeshManager {
     mesh_ids: HashMap<TypeId, MeshId>,
@@ -21,14 +25,11 @@ impl MeshManager {
         }
     }
 
-    pub fn get_or_insert<T: MeshProvider<Vertex = PNVertex>>(
-        &mut self,
-        _: T,
-    ) -> MeshId {
+    pub fn get_or_insert<T: MeshProvider>(&mut self, _: T) -> MeshId {
         *self.mesh_ids.entry(TypeId::of::<T>()).or_insert_with(|| {
             let id = self.meshes.len();
             self.meshes.push(load_mesh(&self.device, T::create_mesh()));
-            MeshId(id)
+            MeshId(id, TypeId::of::<T::Vertex>())
         })
     }
 
@@ -37,7 +38,7 @@ impl MeshManager {
     }
 }
 
-fn load_mesh(device: &Device, mesh: Mesh<PNVertex>) -> MeshBuffers {
+fn load_mesh(device: &Device, mesh: Mesh<impl Vertex>) -> MeshBuffers {
     println!("loading mesh");
     let index_range = 0..mesh.indices.len() as u32;
     let vertex = device.create_buffer_init(&BufferInitDescriptor {
@@ -57,6 +58,16 @@ fn load_mesh(device: &Device, mesh: Mesh<PNVertex>) -> MeshBuffers {
     }
 }
 
+pub trait Vertex: Pod {
+    const ATTRIBUTES: &'static [VertexAttribute];
+    const BUFFER_LAYOUT: VertexBufferLayout<'static> = VertexBufferLayout {
+        array_stride: size_of::<Self>() as u64,
+        step_mode: wgpu::VertexStepMode::Vertex,
+        attributes: Self::ATTRIBUTES,
+    };
+    const PRIMITIVE_TOPOLOGY: PrimitiveTopology;
+}
+
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable, Debug)]
 pub struct PNVertex {
@@ -64,27 +75,38 @@ pub struct PNVertex {
     pub normal: [f32; 3],
 }
 
-impl PNVertex {
-    pub const ATTRIB: [VertexAttribute; 2] =
-        wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3];
+impl Vertex for PNVertex {
+    const ATTRIBUTES: &'static [VertexAttribute] =
+        &wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3];
 
-    pub const BUFFER_LAYOUT: VertexBufferLayout<'static> = VertexBufferLayout {
-        array_stride: size_of::<PNVertex>() as u64,
-        step_mode: wgpu::VertexStepMode::Vertex,
-        attributes: &Self::ATTRIB,
-    };
+    const PRIMITIVE_TOPOLOGY: PrimitiveTopology =
+        PrimitiveTopology::TriangleList;
 }
 
-pub struct Mesh<V> {
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable, Debug)]
+pub struct PDVertex {
+    pub position: [f32; 3],
+    pub direction: [f32; 3],
+}
+
+impl Vertex for PDVertex {
+    const ATTRIBUTES: &'static [VertexAttribute] =
+        &wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3];
+
+    const PRIMITIVE_TOPOLOGY: PrimitiveTopology = PrimitiveTopology::LineList;
+}
+
+pub struct Mesh<V: Vertex> {
     pub vertices: Vec<V>,
     pub indices: Vec<u16>,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub struct MeshId(usize);
+pub struct MeshId(usize, pub TypeId);
 
 pub trait MeshProvider: 'static + Copy {
-    type Vertex;
+    type Vertex: Vertex;
     fn create_mesh() -> Mesh<Self::Vertex>;
 }
 

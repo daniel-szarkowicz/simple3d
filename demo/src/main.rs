@@ -1,7 +1,7 @@
 use demo::omt::{rand_aabbs, Leaf, RTree};
 use graphics::app::{App, AppState};
 use graphics::canvas::Canvas;
-use graphics::geometry::Box;
+use graphics::geometry::{Box, BoxLines};
 use graphics::math::Transform;
 
 fn main() {
@@ -29,7 +29,7 @@ impl AppState for State {
             let size = aabb.size().map(|f| f as f32);
             let pos = aabb.pos().map(|f| f as f32);
             canvas
-                .draw(Box)
+                .draw(BoxLines)
                 .scale(size[0], size[1], size[2])
                 .translate(pos[0], pos[1], pos[2]);
             // canvas.draw(BoxLines);

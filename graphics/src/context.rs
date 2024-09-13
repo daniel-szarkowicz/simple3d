@@ -1,4 +1,6 @@
-use std::{borrow::Cow, num::NonZero, sync::Arc};
+use std::{
+    any::TypeId, borrow::Cow, collections::HashMap, num::NonZero, sync::Arc,
+};
 
 use bytemuck::Zeroable;
 use pollster::FutureExt;
@@ -19,7 +21,7 @@ use winit::{
 use crate::{
     camera::FirstPersonCamera,
     canvas::{Canvas, DrawCommand},
-    mesh::{MeshManager, PNVertex},
+    mesh::{MeshManager, PDVertex, PNVertex, Vertex},
 };
 
 pub struct Context {
@@ -27,7 +29,7 @@ pub struct Context {
     config: SurfaceConfiguration,
     surface: Surface<'static>,
     device: Arc<Device>,
-    render_pipeline: RenderPipeline,
+    render_pipelines: HashMap<TypeId, RenderPipeline>,
     queue: Queue,
     camera_uniform_buffer: Buffer,
     camera_bind_group: BindGroup,
@@ -79,11 +81,19 @@ impl Context {
         }
         .block_on();
 
-        let shader =
+        let pn_shader =
             device.create_shader_module(wgpu::ShaderModuleDescriptor {
                 label: None,
                 source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!(
-                    "shader.wgsl"
+                    "pn_shader.wgsl"
+                ))),
+            });
+
+        let pd_shader =
+            device.create_shader_module(wgpu::ShaderModuleDescriptor {
+                label: None,
+                source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!(
+                    "pd_shader.wgsl"
                 ))),
             });
 
@@ -130,40 +140,27 @@ impl Context {
             mapped_at_creation: false,
         });
 
-        let render_pipeline =
-            device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-                label: None,
-                layout: Some(&pipeline_layout),
-                vertex: wgpu::VertexState {
-                    module: &shader,
-                    entry_point: "vs_main",
-                    buffers: &[
-                        PNVertex::BUFFER_LAYOUT,
-                        InstanceData::BUFFER_LAYOUT,
-                    ],
-                    compilation_options: Default::default(),
-                },
-                primitive: wgpu::PrimitiveState {
-                    cull_mode: Some(wgpu::Face::Back),
-                    ..wgpu::PrimitiveState::default()
-                },
-                depth_stencil: Some(DepthStencilState {
-                    format: wgpu::TextureFormat::Depth32Float,
-                    depth_write_enabled: true,
-                    depth_compare: wgpu::CompareFunction::Less,
-                    stencil: StencilState::default(),
-                    bias: DepthBiasState::default(),
-                }),
-                multisample: wgpu::MultisampleState::default(),
-                fragment: Some(wgpu::FragmentState {
-                    module: &shader,
-                    entry_point: "fs_main",
-                    compilation_options: Default::default(),
-                    targets: &[Some(swapchain_format.into())],
-                }),
-                multiview: None,
-                cache: None,
-            });
+        let mut render_pipelines = HashMap::new();
+
+        render_pipelines.insert(
+            TypeId::of::<PNVertex>(),
+            create_render_pipeline::<PNVertex>(
+                &device,
+                &pipeline_layout,
+                &pn_shader,
+                swapchain_format,
+            ),
+        );
+
+        render_pipelines.insert(
+            TypeId::of::<PDVertex>(),
+            create_render_pipeline::<PDVertex>(
+                &device,
+                &pipeline_layout,
+                &pd_shader,
+                swapchain_format,
+            ),
+        );
 
         let camera_bind_group =
             device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -189,7 +186,7 @@ impl Context {
             config,
             surface,
             device,
-            render_pipeline,
+            render_pipelines,
             queue,
             camera_uniform_buffer,
             camera_bind_group,
@@ -285,7 +282,7 @@ impl Context {
                 mesh_buffers.index.slice(..),
                 IndexFormat::Uint16,
             );
-            rpass.set_pipeline(&self.render_pipeline);
+            rpass.set_pipeline(&self.render_pipelines[&batch[0].mesh_id.1]);
             rpass.set_bind_group(0, &self.camera_bind_group, &[]);
             rpass.draw_indexed(
                 mesh_buffers.index_range.clone(),
@@ -316,6 +313,45 @@ impl Context {
             create_depth_texture(&self.device, &self.config);
         self.surface.configure(&self.device, &self.config);
     }
+}
+
+fn create_render_pipeline<V: Vertex>(
+    device: &Device,
+    pipeline_layout: &wgpu::PipelineLayout,
+    shader: &wgpu::ShaderModule,
+    swapchain_format: wgpu::TextureFormat,
+) -> RenderPipeline {
+    device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        label: None,
+        layout: Some(pipeline_layout),
+        vertex: wgpu::VertexState {
+            module: shader,
+            entry_point: "vs_main",
+            buffers: &[V::BUFFER_LAYOUT, InstanceData::BUFFER_LAYOUT],
+            compilation_options: Default::default(),
+        },
+        primitive: wgpu::PrimitiveState {
+            cull_mode: Some(wgpu::Face::Back),
+            topology: V::PRIMITIVE_TOPOLOGY,
+            ..wgpu::PrimitiveState::default()
+        },
+        depth_stencil: Some(DepthStencilState {
+            format: wgpu::TextureFormat::Depth32Float,
+            depth_write_enabled: true,
+            depth_compare: wgpu::CompareFunction::Less,
+            stencil: StencilState::default(),
+            bias: DepthBiasState::default(),
+        }),
+        multisample: wgpu::MultisampleState::default(),
+        fragment: Some(wgpu::FragmentState {
+            module: &shader,
+            entry_point: "fs_main",
+            compilation_options: Default::default(),
+            targets: &[Some(swapchain_format.into())],
+        }),
+        multiview: None,
+        cache: None,
+    })
 }
 
 fn create_depth_texture(
