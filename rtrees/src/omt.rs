@@ -16,7 +16,7 @@ struct Node {
 #[derive(Debug, Clone)]
 pub struct Leaf<T> {
     pub aabb: AABB,
-    data: T,
+    pub data: T,
 }
 
 const MAX_NODE_SIZE: usize = 6;
@@ -113,9 +113,12 @@ impl<T> RTree<T> {
         self.layers.len() + 1
     }
 
-    fn query<'a>(&'a self, aabb: &AABB) -> Query<'a, T> {
-        // Query::new(self, aabb)
-        todo!()
+    pub fn query(&self, aabb: AABB) -> Query<'_, T> {
+        Query::new(self, aabb)
+    }
+
+    pub fn leaves(&self) -> impl Iterator<Item = &Leaf<T>> {
+        self.leaves.iter()
     }
 }
 
@@ -157,8 +160,106 @@ impl<'a, T> Iterator for AABBS<'a, T> {
     }
 }
 
-struct Query<'a, T> {
-    tree: &'a RTree<T>,
+pub struct QueryItem<'rtree, T> {
+    pub aabb: AABB,
+    pub data: QueryData<'rtree, T>,
+}
+
+pub enum QueryData<'rtree, T> {
+    Node { depth: usize },
+    Leaf { data: &'rtree T },
+}
+
+impl<'rtree, T> QueryItem<'rtree, T> {
+    /// Returns `true` if the query data is [`Node`].
+    ///
+    /// [`Node`]: QueryData::Node
+    #[must_use]
+    pub fn is_node(&self) -> bool {
+        matches!(self.data, QueryData::Node { .. })
+    }
+
+    /// Returns `true` if the query data is [`Leaf`].
+    ///
+    /// [`Leaf`]: QueryData::Leaf
+    #[must_use]
+    pub fn is_leaf(&self) -> bool {
+        matches!(self.data, QueryData::Leaf { .. })
+    }
+}
+
+pub struct Query<'rtree, T> {
+    tree: &'rtree RTree<T>,
+    aabb: AABB,
+    indices: Vec<(usize, usize)>,
+    ret_root: bool,
+}
+
+impl<'rtree, T> Query<'rtree, T> {
+    pub fn new(tree: &'rtree RTree<T>, aabb: AABB) -> Self {
+        let height = tree.height();
+        let mut indices = Vec::with_capacity(height - 1);
+        let root = &tree.layers[0][0];
+        indices.push((root.start, root.end));
+        Self {
+            tree,
+            aabb,
+            indices,
+            ret_root: true,
+        }
+    }
+}
+
+impl<'rtree, T> Iterator for Query<'rtree, T> {
+    type Item = QueryItem<'rtree, T>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.ret_root {
+            self.ret_root = false;
+            return Some(QueryItem {
+                aabb: self.tree.layers[0][0].aabb,
+                data: QueryData::Node { depth: 0 },
+            });
+        }
+        if self.indices.len() == self.tree.height() - 1 {
+            // guess we doin leaves now
+            let index = self.indices.last_mut().unwrap();
+            while index.0 < index.1 {
+                let leaf = &self.tree.leaves[index.0];
+                index.0 += 1;
+                if leaf.aabb.overlaps(&self.aabb) {
+                    return Some(QueryItem {
+                        aabb: leaf.aabb,
+                        data: QueryData::Leaf { data: &leaf.data },
+                    });
+                }
+            }
+            // this node is done, go to next
+            self.indices.pop();
+            self.next()
+        } else {
+            let layer = self.indices.len();
+            let Some(index) = self.indices.last_mut() else {
+                // we finished iterating the tree
+                return None;
+            };
+            while index.0 < index.1 {
+                let node = &self.tree.layers[layer][index.0];
+                index.0 += 1;
+                if node.aabb.overlaps(&self.aabb) {
+                    // we found a good node
+                    self.indices.push((node.start, node.end));
+                    return Some(QueryItem {
+                        aabb: node.aabb,
+                        data: QueryData::Node { depth: layer },
+                    });
+                }
+            }
+            // this node is done, go to next
+            self.indices.pop();
+            self.next()
+        }
+    }
 }
 
 fn calculate_splits(
@@ -215,8 +316,8 @@ pub fn rand_aabb() -> AABB {
 
 #[derive(Clone, Copy, Debug)]
 pub struct AABB {
-    min: [f64; 3],
-    max: [f64; 3],
+    pub min: [f64; 3],
+    pub max: [f64; 3],
 }
 
 impl AABB {
