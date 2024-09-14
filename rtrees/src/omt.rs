@@ -22,28 +22,24 @@ pub struct Leaf<T> {
 const MAX_NODE_SIZE: usize = 6;
 
 impl<T> RTree<T> {
-    pub fn new(leaves: Vec<Leaf<T>>) -> Self {
-        let height = if leaves.len() < MAX_NODE_SIZE {
-            0
+    pub fn new(mut leaves: Vec<Leaf<T>>) -> Self {
+        let height = if leaves.len() <= MAX_NODE_SIZE {
+            1
         } else {
-            (leaves.len() as f64).log(MAX_NODE_SIZE as f64).ceil() as usize - 1
+            (leaves.len() - 1).ilog(MAX_NODE_SIZE) as usize + 1
         };
-        let mut this = Self {
-            layers: vec![vec![Node {
-                start: 0,
-                end: leaves.len(),
-                aabb: AABB::merge(leaves.iter().map(|l| &l.aabb)),
-            }]],
-            leaves,
-        };
-        for _ in 0..height {
-            let new_layer = Self::omt_new_layer(
-                this.layers.last_mut().unwrap(),
-                &mut this.leaves,
-            );
-            this.layers.push(new_layer);
+        let mut layers = Vec::with_capacity(height);
+        layers.push(vec![Node {
+            start: 0,
+            end: leaves.len(),
+            aabb: AABB::merge(leaves.iter().map(|l| &l.aabb)),
+        }]);
+        for _ in 1..height {
+            let new_layer =
+                Self::omt_new_layer(layers.last_mut().unwrap(), &mut leaves);
+            layers.push(new_layer);
         }
-        this
+        Self { layers, leaves }
     }
 
     fn omt_new_layer(

@@ -391,7 +391,6 @@ version = "0.1.0"
 dependencies = [
  "graphics",
  "nalgebra",
- "rand",
 ]
 
 [[package]]
