@@ -47,17 +47,18 @@ fn vs_main(vtx_in: VertexIn, instance_in: InstanceIn) -> VertexOut {
     );
 
     let world_position = model * vec4(vtx_in.position, 1.0);
+    let view_dir = camera.position * world_position.w - world_position.xyz;
     let position = camera.view_proj * world_position;
     let normal = (vec4(vtx_in.normal, 1.0) * model_inv).xyz;
-    let view_dir = camera.position * world_position.w - world_position.xyz;
     return VertexOut(position, normal, view_dir, instance_in.color);
 }
 
 @fragment
 fn fs_main(frag_in: VertexOut) -> @location(0) vec4<f32> {
     let light_dir = normalize(vec3<f32>(1.0, 1.0, 1.0));
-    let normal = normalize(frag_in.normal);
+    var normal = normalize(frag_in.normal);
     let view_dir = normalize(frag_in.view_dir);
+    normal *= sign(dot(normal, view_dir));
 
     let diffuse = max(dot(normal, light_dir), 0.0);
     let ambient = max(dot(normal, view_dir), 0.0);

@@ -399,7 +399,7 @@ fn create_render_pipeline<V: Vertex>(
             compilation_options: Default::default(),
         },
         primitive: wgpu::PrimitiveState {
-            cull_mode: Some(wgpu::Face::Back),
+            // cull_mode: Some(wgpu::Face::Back),
             topology: V::PRIMITIVE_TOPOLOGY,
             ..wgpu::PrimitiveState::default()
         },
