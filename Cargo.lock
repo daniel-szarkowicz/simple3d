@@ -585,7 +585,6 @@ dependencies = [
  "bytemuck",
  "nalgebra",
  "pollster",
- "rand",
  "wgpu",
  "winit",
 ]

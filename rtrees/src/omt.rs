@@ -13,7 +13,7 @@ struct Node {
     end: usize,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Leaf<T> {
     pub aabb: AABB,
     data: T,
@@ -23,8 +23,11 @@ const MAX_NODE_SIZE: usize = 6;
 
 impl<T> RTree<T> {
     pub fn new(leaves: Vec<Leaf<T>>) -> Self {
-        let height =
-            (leaves.len() as f64).log(MAX_NODE_SIZE as f64).ceil() as usize - 1;
+        let height = if leaves.len() < MAX_NODE_SIZE {
+            0
+        } else {
+            (leaves.len() as f64).log(MAX_NODE_SIZE as f64).ceil() as usize - 1
+        };
         let mut this = Self {
             layers: vec![vec![Node {
                 start: 0,
@@ -231,7 +234,12 @@ impl AABB {
 
     pub fn merge<'a>(aabbs: impl IntoIterator<Item = &'a AABB>) -> AABB {
         let mut iter = aabbs.into_iter();
-        let first = iter.next().unwrap();
+        let Some(first) = iter.next() else {
+            return AABB {
+                min: [std::f64::MAX; 3],
+                max: [std::f64::MIN; 3],
+            };
+        };
         iter.fold(*first, |mut a, b| {
             a.min[0] = a.min[0].min(b.min[0]);
             a.min[1] = a.min[1].min(b.min[1]);

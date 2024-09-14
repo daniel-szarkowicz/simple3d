@@ -1,3 +1,4 @@
+// #![feature(test)]
 use std::time::Instant;
 
 use graphics::app::{App, AppState};
@@ -101,3 +102,34 @@ impl AppState for State {
             .translate_y(-20.0);
     }
 }
+
+// #[cfg(test)]
+// mod tests {
+//     use super::*;
+//     extern crate test;
+//     use test::Bencher;
+
+//     const AABBS: usize = 100_000;
+
+//     #[bench]
+//     fn omt(b: &mut Bencher) {
+//         let leaves: Vec<Leaf<()>> =
+//             rand_aabbs(AABBS).into_iter().map(Leaf::new_empty).collect();
+//         b.iter(|| {
+//             let omt = Omt::new(leaves.clone());
+//             test::black_box(&omt);
+//         });
+//     }
+
+//     #[bench]
+//     fn rtree(b: &mut Bencher) {
+//         let aabbs = rand_aabbs(AABBS);
+//         b.iter(|| {
+//             let mut rtree = RTree::new();
+//             for aabb in &aabbs {
+//                 rtree.insert(*aabb, ());
+//             }
+//             test::black_box(&rtree);
+//         });
+//     }
+// }
