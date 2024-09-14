@@ -21,14 +21,21 @@ struct State {
     query_aabb: AABB,
 }
 
+const BOUNDS: AABB = AABB {
+    min: [-10.0, -10.0, -10.0],
+    max: [10.0, 10.0, 10.0],
+};
+
 impl State {
     fn new() -> Self {
-        let leaves: Vec<Leaf<()>> =
-            rand_aabbs(10000).into_iter().map(Leaf::new_empty).collect();
+        let leaves: Vec<Leaf<()>> = rand_aabbs(10000, BOUNDS, 0.01..0.1)
+            .into_iter()
+            .map(Leaf::new_empty)
+            .collect();
         Self {
             prev: Instant::now(),
             omt: Omt::new(leaves),
-            query_aabb: rand_aabb(),
+            query_aabb: rand_aabb(BOUNDS, 0.02..0.2),
         }
     }
 }
@@ -38,7 +45,7 @@ impl AppState for State {
         let delay = Duration::from_secs(5);
         if self.prev.elapsed() > delay {
             self.prev += delay;
-            self.query_aabb = rand_aabb();
+            self.query_aabb = rand_aabb(BOUNDS, 0.02..0.2);
         } else {
             let pos = self.query_aabb.pos();
             self.query_aabb.min[0] -= pos[0] / 100.0;

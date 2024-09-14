@@ -1,4 +1,6 @@
-use std::iter;
+use std::{any::Any, iter, ops::Range};
+
+use rand::distributions::uniform::SampleRange;
 
 #[derive(Debug)]
 pub struct RTree<T> {
@@ -297,20 +299,36 @@ fn calculate_splits(
     splits
 }
 
-pub fn rand_aabbs(n: usize) -> Vec<AABB> {
+pub fn rand_aabbs(
+    n: usize,
+    bounds: AABB,
+    size_bounds: Range<f64>,
+) -> Vec<AABB> {
     let mut aabbs = Vec::with_capacity(n);
     for _ in 0..n {
-        aabbs.push(rand_aabb());
+        aabbs.push(rand_aabb(bounds, size_bounds.clone()));
     }
     aabbs
 }
 
-pub fn rand_aabb() -> AABB {
-    let pos = rand::random::<[f64; 3]>().map(|p| 20.0 * (p - 0.5));
-    let size = rand::random::<[f64; 3]>().map(|s| 0.1 + s * 0.1);
+pub fn rand_aabb(bounds: AABB, size_bounds: Range<f64>) -> AABB {
+    let mut rng = rand::thread_rng();
+    let half_size = [
+        size_bounds.clone().sample_single(&mut rng) / 0.5,
+        size_bounds.clone().sample_single(&mut rng) / 0.5,
+        size_bounds.clone().sample_single(&mut rng) / 0.5,
+    ];
+    let pos = [
+        (bounds.min[0] + half_size[0]..bounds.max[0] - half_size[0])
+            .sample_single(&mut rng),
+        (bounds.min[1] + half_size[1]..bounds.max[1] - half_size[1])
+            .sample_single(&mut rng),
+        (bounds.min[2] + half_size[2]..bounds.max[2] - half_size[2])
+            .sample_single(&mut rng),
+    ];
     AABB {
-        min: [0, 1, 2].map(|i| pos[i] - size[i]),
-        max: [0, 1, 2].map(|i| pos[i] + size[i]),
+        min: [0, 1, 2].map(|i| pos[i] - half_size[i]),
+        max: [0, 1, 2].map(|i| pos[i] + half_size[i]),
     }
 }
 
