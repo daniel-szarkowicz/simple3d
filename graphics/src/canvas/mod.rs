@@ -30,14 +30,11 @@ impl<'c> Canvas<'c> {
         self.commands.push(command);
     }
 
-    pub fn group<'cref>(
+    pub fn group<'cref, GroupFn: FnOnce(&mut Canvas)>(
         &'cref mut self,
-        group_fn: impl FnOnce(&mut Canvas),
-    ) -> Group<'c, 'cref> {
-        let mut canv = Canvas::new(self.meshes);
-        group_fn(&mut canv);
-        let commands = canv.commands;
-        Group::new(self, commands)
+        group_fn: GroupFn,
+    ) -> Group<'c, 'cref, GroupFn> {
+        Group::new(self, group_fn)
     }
 
     pub fn draw<'cref, T: Drawable>(
@@ -50,17 +47,17 @@ impl<'c> Canvas<'c> {
 
 pub trait Drawable {
     fn draw<'c, 'cref>(
-        &self,
+        self,
         canvas: &'cref mut Canvas<'c>,
     ) -> Drawing<'c, 'cref>;
 }
 
 impl<T: MeshProvider> Drawable for T {
     fn draw<'c, 'cref>(
-        &self,
+        self,
         canvas: &'cref mut Canvas<'c>,
     ) -> Drawing<'c, 'cref> {
-        let mesh = canvas.meshes.get_or_insert(*self);
+        let mesh = canvas.meshes.get_or_insert::<T>();
         Drawing::new(canvas, mesh)
     }
 }

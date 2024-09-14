@@ -25,7 +25,7 @@ impl MeshManager {
         }
     }
 
-    pub fn get_or_insert<T: MeshProvider>(&mut self, _: T) -> MeshId {
+    pub fn get_or_insert<T: MeshProvider>(&mut self) -> MeshId {
         *self.mesh_ids.entry(TypeId::of::<T>()).or_insert_with(|| {
             let id = self.meshes.len();
             self.meshes.push(load_mesh(&self.device, T::create_mesh()));
