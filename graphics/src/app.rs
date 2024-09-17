@@ -1,6 +1,9 @@
 use winit::{application::ApplicationHandler, event_loop::EventLoop};
 
-use crate::{canvas::Canvas, context::Context};
+use crate::{
+    canvas::Canvas,
+    context::{self, Context},
+};
 
 type Update<State> = fn(&mut State) -> ();
 type Draw<State> = fn(&State, &mut Canvas) -> ();

@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 
-use crate::mesh::{Mesh, MeshProvider, PDVertex, PNVertex};
+use crate::mesh::{Dynamic, Mesh, MeshProvider, PDVertex, PNVertex, Static};
 
 #[derive(Clone, Copy)]
 pub struct Box;
@@ -13,7 +13,9 @@ pub struct BoxLines;
 
 impl MeshProvider for Box {
     type Vertex = PNVertex;
-    fn create_mesh() -> Mesh<Self::Vertex> {
+    type Kind = Static;
+
+    fn create_mesh(self) -> Mesh<Self::Vertex> {
         #[rustfmt::skip]
         let vertices = vec![
            PNVertex { position: [ 0.5,  0.5,  0.5], normal: [ 0.0,  0.0,  1.0] },
@@ -61,7 +63,9 @@ impl MeshProvider for Box {
 
 impl MeshProvider for Ellipsoid {
     type Vertex = PNVertex;
-    fn create_mesh() -> Mesh<Self::Vertex> {
+    type Kind = Static;
+
+    fn create_mesh(self) -> Mesh<Self::Vertex> {
         let Polyhedron { vertices, faces } = icosphere(3);
         let vertices = vertices
             .into_iter()
@@ -80,8 +84,9 @@ impl MeshProvider for Ellipsoid {
 
 impl MeshProvider for BoxLines {
     type Vertex = PDVertex;
+    type Kind = Static;
 
-    fn create_mesh() -> Mesh<Self::Vertex> {
+    fn create_mesh(self) -> Mesh<Self::Vertex> {
         #[rustfmt::skip]
         let vertices = vec![
             PDVertex { position: [ 0.5,  0.5,  0.5], direction: [1.0, 0.0, 0.0] },
@@ -258,4 +263,64 @@ fn icosphere(subdivisions: usize) -> Polyhedron {
         icosphere.normalize();
     }
     icosphere
+}
+
+// TODO: add automatic derivation
+#[derive(Clone, Copy)]
+pub struct ParametricSquare<GenFn: Fn(f32, f32) -> (f32, f32, f32)> {
+    steps: usize,
+    generator: GenFn,
+}
+
+impl<GenFn: Fn(f32, f32) -> (f32, f32, f32)> ParametricSquare<GenFn> {
+    pub fn new(steps: usize, generator: GenFn) -> Self {
+        Self { steps, generator }
+    }
+}
+
+impl<GenFn: Fn(f32, f32) -> (f32, f32, f32) + Copy> MeshProvider
+    for ParametricSquare<GenFn>
+{
+    type Vertex = PNVertex;
+    type Kind = Dynamic;
+
+    fn create_mesh(self) -> Mesh<Self::Vertex> {
+        let mut vertices = Vec::with_capacity(self.steps * self.steps);
+        let gen_steps = self.steps - 1;
+        for i in 0..=gen_steps {
+            for j in 0..=gen_steps {
+                let x = i as f32 / gen_steps as f32 - 0.5;
+                let z = j as f32 / gen_steps as f32 - 0.5;
+                let (y, x_grad, z_grad) = (self.generator)(x, z);
+                let x_angle = x_grad.atan();
+                let z_angle = z_grad.atan();
+                let x_vec = [x_angle.cos(), x_angle.sin(), 0.0];
+                let z_vec = [0.0, z_angle.sin(), z_angle.cos()];
+                // normal = z_vec cross x_vec
+                let normal = [
+                    z_vec[1] * x_vec[2] - z_vec[2] * x_vec[1],
+                    z_vec[2] * x_vec[0] - z_vec[0] * x_vec[2],
+                    z_vec[0] * x_vec[1] - z_vec[1] * x_vec[0],
+                ];
+                vertices.push(PNVertex {
+                    position: [x, y, z],
+                    normal,
+                });
+            }
+        }
+        let mut indices = Vec::with_capacity(gen_steps * gen_steps * 6);
+        for i in 0..gen_steps as u16 {
+            #[allow(clippy::identity_op)]
+            for j in 0..gen_steps as u16 {
+                indices.push(self.steps as u16 * (j + 0) + i + 0);
+                indices.push(self.steps as u16 * (j + 0) + i + 1);
+                indices.push(self.steps as u16 * (j + 1) + i + 0);
+
+                indices.push(self.steps as u16 * (j + 1) + i + 0);
+                indices.push(self.steps as u16 * (j + 0) + i + 1);
+                indices.push(self.steps as u16 * (j + 1) + i + 1);
+            }
+        }
+        Mesh { vertices, indices }
+    }
 }

@@ -279,7 +279,7 @@ impl Context {
                 mesh_buffers.index.slice(..),
                 IndexFormat::Uint16,
             );
-            rpass.set_pipeline(&self.render_pipelines[&mesh_id.1]);
+            rpass.set_pipeline(&self.render_pipelines[&mesh_id.vtx_type_id]);
             rpass.set_bind_group(0, &self.camera_bind_group, &[]);
             rpass.draw_indexed(
                 mesh_buffers.index_range.clone(),
@@ -293,6 +293,7 @@ impl Context {
         }
         frame.present();
         self.window.request_redraw();
+        self.meshes.clear_dynamic();
     }
 
     pub fn event(&mut self, event: &Event<()>) {

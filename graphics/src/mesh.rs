@@ -7,39 +7,37 @@ use wgpu::{
     VertexBufferLayout,
 };
 
-// VertexType -> index
-//
-
 pub struct MeshManager {
-    mesh_ids: HashMap<TypeId, MeshId>,
-    meshes: Vec<MeshBuffers>,
+    static_mesh_ids: HashMap<TypeId, MeshId>,
+    static_meshes: Vec<MeshBuffers>,
+    dynamic_meshes: Vec<MeshBuffers>,
     device: Arc<Device>,
 }
 
 impl MeshManager {
     pub fn new(device: Arc<Device>) -> Self {
         Self {
-            mesh_ids: HashMap::new(),
-            meshes: Vec::new(),
+            static_mesh_ids: HashMap::new(),
+            static_meshes: Vec::new(),
+            dynamic_meshes: Vec::new(),
             device,
         }
     }
 
-    pub fn get_or_insert<T: MeshProvider>(&mut self) -> MeshId {
-        *self.mesh_ids.entry(TypeId::of::<T>()).or_insert_with(|| {
-            let id = self.meshes.len();
-            self.meshes.push(load_mesh(&self.device, T::create_mesh()));
-            MeshId(id, TypeId::of::<T::Vertex>())
-        })
+    pub(crate) fn get_by_id(&self, id: MeshId) -> &MeshBuffers {
+        if id.dynamic {
+            &self.dynamic_meshes[id.index]
+        } else {
+            &self.static_meshes[id.index]
+        }
     }
 
-    pub(crate) fn get_by_id(&self, id: MeshId) -> &MeshBuffers {
-        &self.meshes[id.0]
+    pub fn clear_dynamic(&mut self) {
+        self.dynamic_meshes.clear();
     }
 }
 
 fn load_mesh(device: &Device, mesh: Mesh<impl Vertex>) -> MeshBuffers {
-    println!("loading mesh");
     let index_range = 0..mesh.indices.len() as u32;
     let vertex = device.create_buffer_init(&BufferInitDescriptor {
         label: None,
@@ -103,11 +101,58 @@ pub struct Mesh<V: Vertex> {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct MeshId(usize, pub TypeId);
+pub struct MeshId {
+    dynamic: bool,
+    index: usize,
+    pub vtx_type_id: TypeId,
+}
 
-pub trait MeshProvider: 'static + Copy {
+pub trait MeshKind<Provider: MeshProvider<Kind = Self> + ?Sized> {
+    fn get_or_insert(manager: &mut MeshManager, provider: Provider) -> MeshId;
+}
+
+pub struct Static;
+
+impl<Provider: MeshProvider<Kind = Static> + 'static + Sized> MeshKind<Provider>
+    for Static
+{
+    fn get_or_insert(manager: &mut MeshManager, provider: Provider) -> MeshId {
+        *manager
+            .static_mesh_ids
+            .entry(TypeId::of::<Provider>())
+            .or_insert_with(|| {
+                let index = manager.static_meshes.len();
+                manager
+                    .static_meshes
+                    .push(load_mesh(&manager.device, provider.create_mesh()));
+                MeshId {
+                    dynamic: false,
+                    index,
+                    vtx_type_id: TypeId::of::<Provider::Vertex>(),
+                }
+            })
+    }
+}
+pub struct Dynamic;
+
+impl<Provider: MeshProvider<Kind = Dynamic>> MeshKind<Provider> for Dynamic {
+    fn get_or_insert(manager: &mut MeshManager, provider: Provider) -> MeshId {
+        let index = manager.dynamic_meshes.len();
+        manager
+            .dynamic_meshes
+            .push(load_mesh(&manager.device, provider.create_mesh()));
+        MeshId {
+            dynamic: true,
+            index,
+            vtx_type_id: TypeId::of::<Provider::Vertex>(),
+        }
+    }
+}
+
+pub trait MeshProvider {
     type Vertex: Vertex;
-    fn create_mesh() -> Mesh<Self::Vertex>;
+    type Kind: MeshKind<Self>;
+    fn create_mesh(self) -> Mesh<Self::Vertex>;
 }
 
 pub struct MeshBuffers {

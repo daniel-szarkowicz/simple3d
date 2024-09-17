@@ -2,7 +2,7 @@ pub mod drawing;
 pub mod group;
 
 use crate::math::Transform;
-use crate::mesh::{MeshId, MeshManager, MeshProvider};
+use crate::mesh::{MeshId, MeshKind, MeshManager, MeshProvider};
 use drawing::Drawing;
 use group::Group;
 use nalgebra::Matrix4;
@@ -52,12 +52,12 @@ pub trait Drawable {
     ) -> Drawing<'c, 'cref>;
 }
 
-impl<T: MeshProvider> Drawable for T {
+impl<Provider: MeshProvider> Drawable for Provider {
     fn draw<'c, 'cref>(
         self,
         canvas: &'cref mut Canvas<'c>,
     ) -> Drawing<'c, 'cref> {
-        let mesh = canvas.meshes.get_or_insert::<T>();
+        let mesh = Provider::Kind::get_or_insert(canvas.meshes, self);
         Drawing::new(canvas, mesh)
     }
 }
