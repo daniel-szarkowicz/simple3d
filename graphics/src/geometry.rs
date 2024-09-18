@@ -326,3 +326,63 @@ impl<GenFn: Fn(f32, f32) -> (f32, f32, f32) + Copy> MeshProvider
         Mesh { vertices, indices }
     }
 }
+
+#[derive(Clone, Copy)]
+pub struct LowPoly<Provider: MeshProvider<Vertex = PNVertex, Kind = Dynamic>>(
+    pub Provider,
+);
+
+impl<Provider: MeshProvider<Vertex = PNVertex, Kind = Dynamic>> MeshProvider
+    for LowPoly<Provider>
+{
+    type Vertex = PNVertex;
+
+    type Kind = Dynamic;
+
+    fn create_mesh(self) -> Mesh<Self::Vertex> {
+        low_poly_triangles(self.0.create_mesh())
+    }
+}
+
+#[derive(Clone, Copy)]
+pub struct StaticLowPoly<
+    Provider: MeshProvider<Vertex = PNVertex, Kind = Static> + 'static,
+>(pub Provider);
+
+impl<Provider: MeshProvider<Vertex = PNVertex, Kind = Static> + 'static>
+    MeshProvider for StaticLowPoly<Provider>
+{
+    type Vertex = PNVertex;
+
+    type Kind = Static;
+
+    fn create_mesh(self) -> Mesh<Self::Vertex> {
+        low_poly_triangles(self.0.create_mesh())
+    }
+}
+
+fn low_poly_triangles(mesh: Mesh<PNVertex>) -> Mesh<PNVertex> {
+    let mut vertices = Vec::with_capacity(mesh.indices.len());
+    let indices = (0..mesh.indices.len() as u32).collect();
+    for i in mesh
+        .indices
+        .chunks(3)
+        .map(|c| std::convert::TryInto::<[_; 3]>::try_into(c).unwrap())
+    {
+        let v = i.map(|i| mesh.vertices[i as usize]);
+        let a = [0, 1, 2].map(|i| v[1].position[i] - v[0].position[i]);
+        let b = [0, 1, 2].map(|i| v[2].position[i] - v[0].position[i]);
+        let normal = [
+            a[1] * b[2] - a[2] * b[1],
+            a[2] * b[0] - a[0] * b[2],
+            a[0] * b[1] - a[1] * b[0],
+        ];
+        let normal_len = normal[0].hypot(normal[1]).hypot(normal[2]);
+        let normal = normal.map(|n| n / normal_len);
+        vertices.extend_from_slice(&v.map(|v| PNVertex {
+            position: v.position,
+            normal,
+        }));
+    }
+    Mesh { vertices, indices }
+}
