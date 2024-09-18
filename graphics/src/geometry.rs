@@ -292,18 +292,16 @@ impl<GenFn: Fn(f32, f32) -> (f32, f32, f32) + Copy> MeshProvider
                 let x = i as f32 / gen_steps as f32 - 0.5;
                 let z = j as f32 / gen_steps as f32 - 0.5;
                 let (y, x_grad, z_grad) = (self.generator)(x, z);
-                let x_angle = x_grad.atan();
-                let z_angle = z_grad.atan();
-                let x_vec = [x_angle.cos(), x_angle.sin(), 0.0];
-                let z_vec = [0.0, z_angle.sin(), z_angle.cos()];
+                let x_vec = [1.0, x_grad, 0.0];
+                let z_vec = [0.0, z_grad, 1.0];
                 // normal = z_vec cross x_vec
                 let normal = [
                     z_vec[1] * x_vec[2] - z_vec[2] * x_vec[1],
                     z_vec[2] * x_vec[0] - z_vec[0] * x_vec[2],
                     z_vec[0] * x_vec[1] - z_vec[1] * x_vec[0],
                 ];
-                // let normal_len = normal[0].hypot(normal[1]).hypot(normal[2]);
-                // let normal = normal.map(|n| n / normal_len);
+                let normal_len = normal[0].hypot(normal[1]).hypot(normal[2]);
+                let normal = normal.map(|n| n / normal_len);
                 vertices.push(PNVertex {
                     position: [x, y, z],
                     normal,
