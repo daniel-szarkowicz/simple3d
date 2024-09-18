@@ -1,4 +1,7 @@
-use winit::{application::ApplicationHandler, event_loop::EventLoop};
+use winit::{
+    application::ApplicationHandler,
+    event_loop::{ControlFlow, EventLoop, EventLoopProxy},
+};
 
 use crate::{
     canvas::Canvas,
@@ -13,6 +16,7 @@ pub struct App<State> {
     update: Update<State>,
     draw: Draw<State>,
     context: Option<Context>,
+    proxy: Option<EventLoopProxy<Context>>,
 }
 
 impl<State> App<State> {
@@ -22,16 +26,14 @@ impl<State> App<State> {
             update,
             draw,
             context: None,
+            proxy: None,
         }
     }
 
     pub fn run(mut self) {
-        let event_loop = EventLoop::new().unwrap();
-        // let mut app = crate::backend::winit::WinitApp::new(
-        //     self.state,
-        //     self.update,
-        //     self.draw,
-        // );
+        let event_loop = EventLoop::with_user_event().build().unwrap();
+        event_loop.set_control_flow(ControlFlow::Poll);
+        self.proxy = Some(event_loop.create_proxy());
         event_loop.run_app(&mut self).unwrap();
     }
 }
@@ -47,9 +49,17 @@ pub trait AppState {
     fn draw(&self, canvas: &mut Canvas);
 }
 
-impl<State> ApplicationHandler for App<State> {
+impl<State> ApplicationHandler<Context> for App<State> {
     fn resumed(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
-        self.context = Some(Context::new(event_loop));
+        // self.context = Some(Context::new(event_loop));
+        let Some(proxy) = self.proxy.take() else {
+            log::warn!("resumed called, but proxy was already taken!");
+            return;
+        };
+        let create_context = async {
+            proxy.send_event(Context::new(event_loop).await).unwrap();
+        };
+        pollster::block_on(create_context);
     }
 
     fn window_event(
@@ -58,7 +68,10 @@ impl<State> ApplicationHandler for App<State> {
         window_id: winit::window::WindowId,
         event: winit::event::WindowEvent,
     ) {
-        let context = self.context.as_mut().unwrap();
+        let Some(context) = self.context.as_mut() else {
+            log::warn!("window_event called with unitialized context!");
+            return;
+        };
         match &event {
             winit::event::WindowEvent::Resized(new_size) => {
                 context.resize(new_size);
@@ -93,5 +106,14 @@ impl<State> ApplicationHandler for App<State> {
 
     fn exiting(&mut self, _event_loop: &winit::event_loop::ActiveEventLoop) {
         self.context = None;
+    }
+
+    fn user_event(
+        &mut self,
+        _event_loop: &winit::event_loop::ActiveEventLoop,
+        context: Context,
+    ) {
+        context.request_redraw();
+        self.context = Some(context);
     }
 }

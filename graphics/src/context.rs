@@ -23,6 +23,7 @@ use crate::{
     mesh::{MeshManager, PDVertex, PNVertex, Vertex},
 };
 
+#[derive(Debug)]
 pub struct Context {
     window: Arc<Window>,
     config: SurfaceConfiguration,
@@ -40,7 +41,7 @@ pub struct Context {
 }
 
 impl Context {
-    pub(crate) fn new(event_loop: &ActiveEventLoop) -> Self {
+    pub(crate) async fn new(event_loop: &ActiveEventLoop) -> Self {
         let window = Arc::new(
             event_loop
                 .create_window(Window::default_attributes())
@@ -52,32 +53,28 @@ impl Context {
 
         let surface = instance.create_surface(window.clone()).unwrap();
 
-        let (adapter, device, queue) = async {
-            let adapter = instance
-                .request_adapter(&wgpu::RequestAdapterOptions {
-                    power_preference: wgpu::PowerPreference::default(),
-                    force_fallback_adapter: false,
-                    compatible_surface: Some(&surface),
-                })
-                .await
-                .unwrap();
-            let (device, queue) = adapter
-                .request_device(
-                    &wgpu::DeviceDescriptor {
-                        label: None,
-                        required_features: wgpu::Features::empty(),
-                        required_limits:
-                            wgpu::Limits::downlevel_webgl2_defaults()
-                                .using_resolution(adapter.limits()),
-                        memory_hints: wgpu::MemoryHints::MemoryUsage,
-                    },
-                    None,
-                )
-                .await
-                .unwrap();
-            (adapter, Arc::new(device), queue)
-        }
-        .block_on();
+        let adapter = instance
+            .request_adapter(&wgpu::RequestAdapterOptions {
+                power_preference: wgpu::PowerPreference::default(),
+                force_fallback_adapter: false,
+                compatible_surface: Some(&surface),
+            })
+            .await
+            .unwrap();
+        let (device, queue) = adapter
+            .request_device(
+                &wgpu::DeviceDescriptor {
+                    label: None,
+                    required_features: wgpu::Features::empty(),
+                    required_limits: wgpu::Limits::downlevel_webgl2_defaults()
+                        .using_resolution(adapter.limits()),
+                    memory_hints: wgpu::MemoryHints::MemoryUsage,
+                },
+                None,
+            )
+            .await
+            .unwrap();
+        let device = Arc::new(device);
 
         let pn_shader =
             device.create_shader_module(wgpu::ShaderModuleDescriptor {
@@ -310,6 +307,10 @@ impl Context {
         (self.depth_texture, self.depth_texture_view) =
             create_depth_texture(&self.device, &self.config);
         self.surface.configure(&self.device, &self.config);
+    }
+
+    pub(crate) fn request_redraw(&self) {
+        self.window.request_redraw();
     }
 }
 

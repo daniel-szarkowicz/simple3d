@@ -7,6 +7,7 @@ use wgpu::{
     VertexBufferLayout,
 };
 
+#[derive(Debug)]
 pub struct MeshManager {
     static_mesh_ids: HashMap<TypeId, MeshId>,
     static_meshes: Vec<MeshBuffers>,
@@ -100,7 +101,7 @@ pub struct Mesh<V: Vertex> {
     pub indices: Vec<u32>,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 pub struct MeshId {
     dynamic: bool,
     index: usize,
@@ -155,6 +156,7 @@ pub trait MeshProvider {
     fn create_mesh(self) -> Mesh<Self::Vertex>;
 }
 
+#[derive(Debug)]
 pub struct MeshBuffers {
     pub vertex: Buffer,
     pub index: Buffer,
