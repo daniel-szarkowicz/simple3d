@@ -169,10 +169,12 @@ impl<F: Float, const DIMS: usize> Rem for AutoGrad<F, DIMS> {
         #[allow(clippy::needless_range_loop)]
         // TODO: implement x < 0 case to match % operator
         for i in 0..DIMS {
-            if self.val < F::zero() {
-                result[i] = -rhs.grad[i] * F::ceil(self.val / rhs.val);
+            if rhs.val < F::zero() {
+                result[i] =
+                    self.grad[i] - rhs.grad[i] * F::ceil(self.val / rhs.val);
             } else {
-                result[i] = -rhs.grad[i] * F::floor(self.val / rhs.val);
+                result[i] =
+                    self.grad[i] - rhs.grad[i] * F::floor(self.val / rhs.val);
             }
         }
         Self {
@@ -279,7 +281,18 @@ impl<F: Float, const DIMS: usize> Float for AutoGrad<F, DIMS> {
     }
 
     fn mul_add(self, a: Self, b: Self) -> Self {
-        todo!()
+        let mut result = [F::zero(); DIMS];
+        #[allow(clippy::needless_range_loop)]
+        for i in 0..DIMS {
+            result[i] = a
+                .val
+                .mul_add(self.grad[i], self.val)
+                .mul_add(a.grad[i], b.grad[i]);
+        }
+        Self {
+            val: self.val.mul_add(a.val, b.val),
+            grad: result,
+        }
     }
 
     fn recip(self) -> Self {
@@ -307,12 +320,12 @@ impl<F: Float, const DIMS: usize> Float for AutoGrad<F, DIMS> {
         }
     }
 
-    // TODO: do real power
     fn powf(self, n: Self) -> Self {
         let mut result = [F::zero(); DIMS];
         #[allow(clippy::needless_range_loop)]
         for i in 0..DIMS {
-            result[i] = self.grad[i] * n.val * self.val.powf(n.val - F::one());
+            result[i] = self.val.powf(n.val - F::one())
+                * (n.val * self.grad[i] + self.val * self.val.ln() * n.grad[i]);
         }
         Self {
             val: self.val.powf(n.val),
@@ -324,8 +337,7 @@ impl<F: Float, const DIMS: usize> Float for AutoGrad<F, DIMS> {
         let mut result = [F::zero(); DIMS];
         #[allow(clippy::needless_range_loop)]
         for i in 0..DIMS {
-            result[i] =
-                self.grad[i] / ((F::one() + F::one()) * self.val.sqrt());
+            result[i] = self.grad[i] / (self.val.sqrt() + self.val.sqrt());
         }
         Self {
             val: self.val.sqrt(),
@@ -346,31 +358,82 @@ impl<F: Float, const DIMS: usize> Float for AutoGrad<F, DIMS> {
     }
 
     fn exp2(self) -> Self {
-        todo!()
+        let mut result = [F::zero(); DIMS];
+        #[allow(clippy::needless_range_loop)]
+        for i in 0..DIMS {
+            result[i] =
+                F::two().log2() * F::two().powf(self.val) * self.grad[i];
+        }
+        Self {
+            val: self.val.exp2(),
+            grad: result,
+        }
     }
 
     fn ln(self) -> Self {
-        todo!()
+        let mut result = [F::zero(); DIMS];
+        #[allow(clippy::needless_range_loop)]
+        for i in 0..DIMS {
+            result[i] = self.grad[i] / self.val;
+        }
+        Self {
+            val: self.val.ln(),
+            grad: result,
+        }
     }
 
     fn log(self, base: Self) -> Self {
-        todo!()
+        let mut result = [F::zero(); DIMS];
+        #[allow(clippy::needless_range_loop)]
+        for i in 0..DIMS {
+            result[i] = ((self.grad[i] * base.val.ln()) / self.val
+                - (self.val.ln() * base.grad[i]))
+                / (base.val.ln() * base.val.ln());
+        }
+        Self {
+            val: self.val.log(base.val),
+            grad: result,
+        }
     }
 
     fn log2(self) -> Self {
-        todo!()
+        let mut result = [F::zero(); DIMS];
+        #[allow(clippy::needless_range_loop)]
+        for i in 0..DIMS {
+            result[i] = self.grad[i] / (self.val * F::two().ln());
+        }
+        Self {
+            val: self.val.ln(),
+            grad: result,
+        }
     }
 
     fn log10(self) -> Self {
-        todo!()
+        let mut result = [F::zero(); DIMS];
+        #[allow(clippy::needless_range_loop)]
+        for i in 0..DIMS {
+            result[i] = self.grad[i] / (self.val * F::from(10).unwrap().ln());
+        }
+        Self {
+            val: self.val.ln(),
+            grad: result,
+        }
     }
 
     fn max(self, other: Self) -> Self {
-        todo!()
+        if self.val < other.val {
+            other
+        } else {
+            self
+        }
     }
 
     fn min(self, other: Self) -> Self {
-        todo!()
+        if self.val < other.val {
+            self
+        } else {
+            other
+        }
     }
 
     fn abs_sub(self, other: Self) -> Self {
@@ -410,19 +473,51 @@ impl<F: Float, const DIMS: usize> Float for AutoGrad<F, DIMS> {
     }
 
     fn tan(self) -> Self {
-        todo!()
+        let mut result = [F::zero(); DIMS];
+        #[allow(clippy::needless_range_loop)]
+        for i in 0..DIMS {
+            result[i] = self.grad[i] / (self.val.cos() * self.val.cos());
+        }
+        Self {
+            val: self.val.tan(),
+            grad: result,
+        }
     }
 
     fn asin(self) -> Self {
-        todo!()
+        let mut result = [F::zero(); DIMS];
+        #[allow(clippy::needless_range_loop)]
+        for i in 0..DIMS {
+            result[i] = self.grad[i] / (F::one() - self.val * self.val).sqrt();
+        }
+        Self {
+            val: self.val.asin(),
+            grad: result,
+        }
     }
 
     fn acos(self) -> Self {
-        todo!()
+        let mut result = [F::zero(); DIMS];
+        #[allow(clippy::needless_range_loop)]
+        for i in 0..DIMS {
+            result[i] = -self.grad[i] / (F::one() - self.val * self.val).sqrt();
+        }
+        Self {
+            val: self.val.acos(),
+            grad: result,
+        }
     }
 
     fn atan(self) -> Self {
-        todo!()
+        let mut result = [F::zero(); DIMS];
+        #[allow(clippy::needless_range_loop)]
+        for i in 0..DIMS {
+            result[i] = self.grad[i] / (self.val * self.val + F::one());
+        }
+        Self {
+            val: self.val.acos(),
+            grad: result,
+        }
     }
 
     fn atan2(self, other: Self) -> Self {
@@ -442,30 +537,86 @@ impl<F: Float, const DIMS: usize> Float for AutoGrad<F, DIMS> {
     }
 
     fn sinh(self) -> Self {
-        todo!()
+        let mut result = [F::zero(); DIMS];
+        #[allow(clippy::needless_range_loop)]
+        for i in 0..DIMS {
+            result[i] = self.grad[i] * self.val.cosh();
+        }
+        Self {
+            val: self.val.sinh(),
+            grad: result,
+        }
     }
 
     fn cosh(self) -> Self {
-        todo!()
+        let mut result = [F::zero(); DIMS];
+        #[allow(clippy::needless_range_loop)]
+        for i in 0..DIMS {
+            result[i] = self.grad[i] * self.val.sinh();
+        }
+        Self {
+            val: self.val.cosh(),
+            grad: result,
+        }
     }
 
     fn tanh(self) -> Self {
-        todo!()
+        let mut result = [F::zero(); DIMS];
+        #[allow(clippy::needless_range_loop)]
+        for i in 0..DIMS {
+            result[i] = self.grad[i] / (self.val.cosh() * self.val.cosh());
+        }
+        Self {
+            val: self.val.tanh(),
+            grad: result,
+        }
     }
 
     fn asinh(self) -> Self {
-        todo!()
+        let mut result = [F::zero(); DIMS];
+        #[allow(clippy::needless_range_loop)]
+        for i in 0..DIMS {
+            result[i] = self.grad[i] / (self.val * self.val + F::one()).sqrt();
+        }
+        Self {
+            val: self.val.asinh(),
+            grad: result,
+        }
     }
 
     fn acosh(self) -> Self {
-        todo!()
+        let mut result = [F::zero(); DIMS];
+        #[allow(clippy::needless_range_loop)]
+        for i in 0..DIMS {
+            result[i] = self.grad[i] / (self.val * self.val - F::one()).sqrt();
+        }
+        Self {
+            val: self.val.acosh(),
+            grad: result,
+        }
     }
 
     fn atanh(self) -> Self {
-        todo!()
+        let mut result = [F::zero(); DIMS];
+        #[allow(clippy::needless_range_loop)]
+        for i in 0..DIMS {
+            result[i] = self.grad[i] / (F::one() - self.val * self.val).sqrt();
+        }
+        Self {
+            val: self.val.atanh(),
+            grad: result,
+        }
     }
 
     fn integer_decode(self) -> (u64, i16, i8) {
         todo!()
     }
 }
+
+trait Two: One + Add {
+    fn two() -> <Self as Add>::Output {
+        Self::one() + Self::one()
+    }
+}
+
+impl<T: One + Add> Two for T {}
