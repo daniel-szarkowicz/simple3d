@@ -76,7 +76,7 @@ impl MeshProvider for Ellipsoid {
             .collect();
         let indices = faces
             .into_iter()
-            .flat_map(|f| f.map(|i| i as u16))
+            .flat_map(|f| f.map(|i| i as u32))
             .collect();
         Mesh { vertices, indices }
     }
@@ -302,6 +302,8 @@ impl<GenFn: Fn(f32, f32) -> (f32, f32, f32) + Copy> MeshProvider
                     z_vec[2] * x_vec[0] - z_vec[0] * x_vec[2],
                     z_vec[0] * x_vec[1] - z_vec[1] * x_vec[0],
                 ];
+                // let normal_len = normal[0].hypot(normal[1]).hypot(normal[2]);
+                // let normal = normal.map(|n| n / normal_len);
                 vertices.push(PNVertex {
                     position: [x, y, z],
                     normal,
@@ -309,16 +311,16 @@ impl<GenFn: Fn(f32, f32) -> (f32, f32, f32) + Copy> MeshProvider
             }
         }
         let mut indices = Vec::with_capacity(gen_steps * gen_steps * 6);
-        for i in 0..gen_steps as u16 {
+        for i in 0..gen_steps as u32 {
             #[allow(clippy::identity_op)]
-            for j in 0..gen_steps as u16 {
-                indices.push(self.steps as u16 * (j + 0) + i + 0);
-                indices.push(self.steps as u16 * (j + 0) + i + 1);
-                indices.push(self.steps as u16 * (j + 1) + i + 0);
+            for j in 0..gen_steps as u32 {
+                indices.push(self.steps as u32 * (j + 0) + i + 0);
+                indices.push(self.steps as u32 * (j + 0) + i + 1);
+                indices.push(self.steps as u32 * (j + 1) + i + 0);
 
-                indices.push(self.steps as u16 * (j + 1) + i + 0);
-                indices.push(self.steps as u16 * (j + 0) + i + 1);
-                indices.push(self.steps as u16 * (j + 1) + i + 1);
+                indices.push(self.steps as u32 * (j + 1) + i + 0);
+                indices.push(self.steps as u32 * (j + 0) + i + 1);
+                indices.push(self.steps as u32 * (j + 1) + i + 1);
             }
         }
         Mesh { vertices, indices }

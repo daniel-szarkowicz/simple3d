@@ -169,7 +169,11 @@ impl<F: Float, const DIMS: usize> Rem for AutoGrad<F, DIMS> {
         #[allow(clippy::needless_range_loop)]
         // TODO: implement x < 0 case to match % operator
         for i in 0..DIMS {
-            result[i] = F::floor(self.val / rhs.val);
+            if self.val < F::zero() {
+                result[i] = -rhs.grad[i] * F::ceil(self.val / rhs.val);
+            } else {
+                result[i] = -rhs.grad[i] * F::floor(self.val / rhs.val);
+            }
         }
         Self {
             val: self.val % rhs.val,

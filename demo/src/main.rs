@@ -29,16 +29,16 @@ impl AppState for State {
         let t = self.start.elapsed().as_secs_f32();
         canvas.draw(Box).rotate_y(t).translate_x(3.0);
         canvas.draw(BoxLines).rotate_y(t).translate_x(-3.0);
-        canvas.draw(ParametricSquare::new(150, |x, y| {
-            let a = AutoGrad::new(x, [1.0, 0.0]);
-            let b = AutoGrad::new(y, [0.0, 1.0]);
-            // let a = AutoDiff::new(a, 1.0);
-            // let result = (a * 10.0 + t * 5.0).sin() / 20.0;
-            // (result.val(), result.diff(), 0.0)
-            let mut c = (a * 10.0.into() + (t * 5.0).into()).sin()
-                + (b * 100.0.into()).sin();
-            c = c / 20.0.into();
-            (c.val(), c.grad()[0], c.grad()[1])
-        }));
+        canvas
+            .draw(ParametricSquare::new(300, |x, z| {
+                let a = AutoGrad::new(x * 10.0, [1.0, 0.0]);
+                let b = AutoGrad::new(z * 10.0, [0.0, 1.0]);
+                // let mut c = (a * 10.0.into() + (t * 5.0).into()).sin()
+                //     * (b * 100.0.into() + t.into()).sin();
+                // c = c / 20.0.into();
+                let c = AutoGrad::from(1.0) % (a * b);
+                (c.val(), c.grad()[0], c.grad()[1])
+            }))
+            .scale(10.0, 1.0, 10.0);
     }
 }

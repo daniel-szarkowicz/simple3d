@@ -277,7 +277,7 @@ impl Context {
             rpass.set_vertex_buffer(1, self.instance_buffer.slice(..));
             rpass.set_index_buffer(
                 mesh_buffers.index.slice(..),
-                IndexFormat::Uint16,
+                IndexFormat::Uint32,
             );
             rpass.set_pipeline(&self.render_pipelines[&mesh_id.vtx_type_id]);
             rpass.set_bind_group(0, &self.camera_bind_group, &[]);

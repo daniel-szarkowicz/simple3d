@@ -97,7 +97,7 @@ impl Vertex for PDVertex {
 
 pub struct Mesh<V: Vertex> {
     pub vertices: Vec<V>,
-    pub indices: Vec<u16>,
+    pub indices: Vec<u32>,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
