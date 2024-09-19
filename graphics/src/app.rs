@@ -3,10 +3,7 @@ use winit::{
     event_loop::{ControlFlow, EventLoop, EventLoopProxy},
 };
 
-use crate::{
-    canvas::Canvas,
-    context::{self, Context},
-};
+use crate::{canvas::Canvas, context::Context};
 
 type Update<State> = fn(&mut State) -> ();
 type Draw<State> = fn(&State, &mut Canvas) -> ();
@@ -51,15 +48,18 @@ pub trait AppState {
 
 impl<State> ApplicationHandler<Context> for App<State> {
     fn resumed(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
-        // self.context = Some(Context::new(event_loop));
         let Some(proxy) = self.proxy.take() else {
             log::warn!("resumed called, but proxy was already taken!");
             return;
         };
-        let create_context = async {
-            proxy.send_event(Context::new(event_loop).await).unwrap();
+        let context = Context::new(event_loop);
+        let send_context = async move {
+            proxy.send_event(context.await).unwrap();
         };
-        pollster::block_on(create_context);
+        #[cfg(target_arch = "wasm32")]
+        wasm_bindgen_futures::spawn_local(send_context);
+        #[cfg(not(target_arch = "wasm32"))]
+        pollster::block_on(send_context);
     }
 
     fn window_event(

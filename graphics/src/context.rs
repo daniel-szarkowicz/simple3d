@@ -1,8 +1,8 @@
 use std::{
-    any::TypeId, borrow::Cow, collections::HashMap, num::NonZero, sync::Arc,
+    any::TypeId, borrow::Cow, collections::HashMap, future::Future,
+    num::NonZero, sync::Arc,
 };
 
-use pollster::FutureExt;
 use wgpu::{
     util::{BufferInitDescriptor, DeviceExt},
     BindGroup, Buffer, BufferDescriptor, BufferUsages, Color,
@@ -13,7 +13,9 @@ use wgpu::{
     TextureViewDescriptor, VertexAttribute, VertexBufferLayout,
 };
 use winit::{
-    dpi::PhysicalSize, event::Event, event_loop::ActiveEventLoop,
+    dpi::{LogicalSize, PhysicalSize},
+    event::Event,
+    event_loop::ActiveEventLoop,
     window::Window,
 };
 
@@ -41,155 +43,177 @@ pub struct Context {
 }
 
 impl Context {
-    pub(crate) async fn new(event_loop: &ActiveEventLoop) -> Self {
-        let window = Arc::new(
-            event_loop
-                .create_window(Window::default_attributes())
-                .unwrap(),
-        );
-        let size = window.inner_size();
+    pub(crate) fn new(
+        event_loop: &ActiveEventLoop,
+    ) -> impl Future<Output = Self> {
+        let mut window_attrs = Window::default_attributes()
+            .with_inner_size(PhysicalSize::new(800, 450));
+        #[cfg(target_arch = "wasm32")]
+        {
+            use wasm_bindgen::JsCast;
+            use web_sys::HtmlCanvasElement;
+            use winit::platform::web::WindowAttributesExtWebSys;
 
-        let instance = wgpu::Instance::default();
+            let web_window = web_sys::window().unwrap();
+            let document = web_window.document().unwrap();
+            let body = document.body().unwrap();
+            let canvas = document.create_element("canvas").unwrap();
+            body.append_child(&canvas).unwrap();
+            window_attrs = window_attrs.with_canvas(Some(
+                canvas.dyn_into::<HtmlCanvasElement>().unwrap(),
+            ));
+        }
+        let window = Arc::new(event_loop.create_window(window_attrs).unwrap());
+        async {
+            let size = window.inner_size();
 
-        let surface = instance.create_surface(window.clone()).unwrap();
+            let instance = wgpu::Instance::default();
 
-        let adapter = instance
-            .request_adapter(&wgpu::RequestAdapterOptions {
-                power_preference: wgpu::PowerPreference::default(),
-                force_fallback_adapter: false,
-                compatible_surface: Some(&surface),
-            })
-            .await
-            .unwrap();
-        let (device, queue) = adapter
-            .request_device(
-                &wgpu::DeviceDescriptor {
-                    label: None,
-                    required_features: wgpu::Features::empty(),
-                    required_limits: wgpu::Limits::downlevel_webgl2_defaults()
-                        .using_resolution(adapter.limits()),
-                    memory_hints: wgpu::MemoryHints::MemoryUsage,
-                },
-                None,
-            )
-            .await
-            .unwrap();
-        let device = Arc::new(device);
+            let surface = instance.create_surface(window.clone()).unwrap();
 
-        let pn_shader =
-            device.create_shader_module(wgpu::ShaderModuleDescriptor {
-                label: None,
-                source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!(
-                    "pn_shader.wgsl"
-                ))),
-            });
-
-        let pd_shader =
-            device.create_shader_module(wgpu::ShaderModuleDescriptor {
-                label: None,
-                source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!(
-                    "pd_shader.wgsl"
-                ))),
-            });
-
-        let camera_bind_group_layout =
-            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                label: None,
-                entries: &[wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::VERTEX,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
+            let adapter = instance
+                .request_adapter(&wgpu::RequestAdapterOptions {
+                    power_preference: wgpu::PowerPreference::default(),
+                    force_fallback_adapter: false,
+                    compatible_surface: Some(&surface),
+                })
+                .await
+                .unwrap();
+            let (device, queue) = adapter
+                .request_device(
+                    &wgpu::DeviceDescriptor {
+                        label: None,
+                        required_features: wgpu::Features::empty(),
+                        required_limits:
+                            wgpu::Limits::downlevel_webgl2_defaults()
+                                .using_resolution(adapter.limits()),
+                        memory_hints: wgpu::MemoryHints::MemoryUsage,
                     },
-                    count: None,
-                }],
-            });
+                    None,
+                )
+                .await
+                .unwrap();
+            let device = Arc::new(device);
 
-        let pipeline_layout =
-            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            let pn_shader =
+                device.create_shader_module(wgpu::ShaderModuleDescriptor {
+                    label: None,
+                    source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(
+                        include_str!("pn_shader.wgsl"),
+                    )),
+                });
+
+            let pd_shader =
+                device.create_shader_module(wgpu::ShaderModuleDescriptor {
+                    label: None,
+                    source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(
+                        include_str!("pd_shader.wgsl"),
+                    )),
+                });
+
+            let camera_bind_group_layout = device.create_bind_group_layout(
+                &wgpu::BindGroupLayoutDescriptor {
+                    label: None,
+                    entries: &[wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStages::VERTEX,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Uniform,
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    }],
+                },
+            );
+
+            let pipeline_layout = device.create_pipeline_layout(
+                &wgpu::PipelineLayoutDescriptor {
+                    label: None,
+                    bind_group_layouts: &[&camera_bind_group_layout],
+                    push_constant_ranges: &[],
+                },
+            );
+
+            let swapchain_capabilities = surface.get_capabilities(&adapter);
+            let swapchain_format = swapchain_capabilities.formats[0];
+
+            let camera = FirstPersonCamera::default();
+
+            let camera_uniform_data = CameraUniform::from(&camera);
+
+            let camera_uniform_buffer =
+                device.create_buffer_init(&BufferInitDescriptor {
+                    label: None,
+                    contents: bytemuck::bytes_of(&camera_uniform_data),
+                    usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
+                });
+
+            let instance_buffer = device.create_buffer(&BufferDescriptor {
                 label: None,
-                bind_group_layouts: &[&camera_bind_group_layout],
-                push_constant_ranges: &[],
+                size: (size_of::<InstanceData>() * MAX_INSTANCE_COUNT) as u64,
+                usage: BufferUsages::VERTEX | BufferUsages::COPY_DST,
+                mapped_at_creation: false,
             });
 
-        let swapchain_capabilities = surface.get_capabilities(&adapter);
-        let swapchain_format = swapchain_capabilities.formats[0];
+            let mut render_pipelines = HashMap::new();
 
-        let camera = FirstPersonCamera::default();
+            render_pipelines.insert(
+                TypeId::of::<PNVertex>(),
+                create_render_pipeline::<PNVertex>(
+                    &device,
+                    &pipeline_layout,
+                    &pn_shader,
+                    swapchain_format,
+                ),
+            );
 
-        let camera_uniform_data = CameraUniform::from(&camera);
+            render_pipelines.insert(
+                TypeId::of::<PDVertex>(),
+                create_render_pipeline::<PDVertex>(
+                    &device,
+                    &pipeline_layout,
+                    &pd_shader,
+                    swapchain_format,
+                ),
+            );
 
-        let camera_uniform_buffer =
-            device.create_buffer_init(&BufferInitDescriptor {
-                label: None,
-                contents: bytemuck::bytes_of(&camera_uniform_data),
-                usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
-            });
+            let camera_bind_group =
+                device.create_bind_group(&wgpu::BindGroupDescriptor {
+                    label: None,
+                    layout: &camera_bind_group_layout,
+                    entries: &[wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: camera_uniform_buffer.as_entire_binding(),
+                    }],
+                });
 
-        let instance_buffer = device.create_buffer(&BufferDescriptor {
-            label: None,
-            size: (size_of::<InstanceData>() * MAX_INSTANCE_COUNT) as u64,
-            usage: BufferUsages::VERTEX | BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
+            let mut config = surface
+                .get_default_config(&adapter, size.width, size.height)
+                .unwrap();
+            config.width = config.width.max(1);
+            config.height = config.height.max(1);
+            config.present_mode = PresentMode::Fifo;
+            let (depth_texture, depth_texture_view) =
+                create_depth_texture(&device, &config);
 
-        let mut render_pipelines = HashMap::new();
-
-        render_pipelines.insert(
-            TypeId::of::<PNVertex>(),
-            create_render_pipeline::<PNVertex>(
-                &device,
-                &pipeline_layout,
-                &pn_shader,
-                swapchain_format,
-            ),
-        );
-
-        render_pipelines.insert(
-            TypeId::of::<PDVertex>(),
-            create_render_pipeline::<PDVertex>(
-                &device,
-                &pipeline_layout,
-                &pd_shader,
-                swapchain_format,
-            ),
-        );
-
-        let camera_bind_group =
-            device.create_bind_group(&wgpu::BindGroupDescriptor {
-                label: None,
-                layout: &camera_bind_group_layout,
-                entries: &[wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: camera_uniform_buffer.as_entire_binding(),
-                }],
-            });
-
-        let mut config = surface
-            .get_default_config(&adapter, size.width, size.height)
-            .unwrap();
-        config.present_mode = PresentMode::Fifo;
-        let (depth_texture, depth_texture_view) =
-            create_depth_texture(&device, &config);
-
-        surface.configure(&device, &config);
-        let meshes = MeshManager::new(device.clone());
-        Self {
-            window,
-            config,
-            surface,
-            device,
-            render_pipelines,
-            queue,
-            camera_uniform_buffer,
-            camera_bind_group,
-            camera,
-            meshes,
-            depth_texture,
-            depth_texture_view,
-            instance_buffer,
+            surface.configure(&device, &config);
+            let meshes = MeshManager::new(device.clone());
+            Self {
+                window,
+                config,
+                surface,
+                device,
+                render_pipelines,
+                queue,
+                camera_uniform_buffer,
+                camera_bind_group,
+                camera,
+                meshes,
+                depth_texture,
+                depth_texture_view,
+                instance_buffer,
+            }
         }
     }
 
@@ -198,6 +222,23 @@ impl Context {
     }
 
     pub(crate) fn render(&mut self, commands: Vec<DrawCommand>) {
+        if self.camera.focus() {
+            self.window.set_fullscreen(Some(
+                winit::window::Fullscreen::Borderless(None),
+            ));
+            let _ = self
+                .window
+                .set_cursor_grab(winit::window::CursorGrabMode::Confined)
+                .or_else(|_| {
+                    self.window
+                        .set_cursor_grab(winit::window::CursorGrabMode::Locked)
+                });
+        } else {
+            self.window.set_fullscreen(None);
+            let _ = self
+                .window
+                .set_cursor_grab(winit::window::CursorGrabMode::None);
+        }
         let frame = self.surface.get_current_texture().unwrap();
         let view = frame.texture.create_view(&TextureViewDescriptor::default());
 
