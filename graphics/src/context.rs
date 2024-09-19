@@ -273,10 +273,10 @@ impl Context {
                     occlusion_query_set: None,
                 });
             let mesh_buffers = self.meshes.get_by_id(*mesh_id);
-            rpass.set_vertex_buffer(0, mesh_buffers.vertex.slice(..));
+            rpass.set_vertex_buffer(0, mesh_buffers.vertex_slice());
             rpass.set_vertex_buffer(1, self.instance_buffer.slice(..));
             rpass.set_index_buffer(
-                mesh_buffers.index.slice(..),
+                mesh_buffers.index_slice(),
                 IndexFormat::Uint32,
             );
             rpass.set_pipeline(&self.render_pipelines[&mesh_id.vtx_type_id]);

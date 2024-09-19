@@ -2,9 +2,8 @@ use std::{any::TypeId, collections::HashMap, ops::Range, sync::Arc};
 
 use bytemuck::{Pod, Zeroable};
 use wgpu::{
-    util::{BufferInitDescriptor, DeviceExt},
-    Buffer, BufferUsages, Device, PrimitiveTopology, VertexAttribute,
-    VertexBufferLayout,
+    Buffer, BufferAddress, BufferSlice, BufferUsages, Device,
+    PrimitiveTopology, VertexAttribute, VertexBufferLayout,
 };
 
 pub struct MeshManager {
@@ -39,19 +38,35 @@ impl MeshManager {
 
 fn load_mesh(device: &Device, mesh: Mesh<impl Vertex>) -> MeshBuffers {
     let index_range = 0..mesh.indices.len() as u32;
-    let vertex = device.create_buffer_init(&BufferInitDescriptor {
+    let vertices: &[u8] = bytemuck::cast_slice(&mesh.vertices);
+    let indices: &[u8] = bytemuck::cast_slice(&mesh.indices);
+    let vertex_slice_len = vertices.len() as BufferAddress;
+    let index_slice_len = indices.len() as BufferAddress;
+    let mut size = vertex_slice_len + index_slice_len;
+    // align size to COPY_BUFFER_ALIGNMENT
+    size += wgpu::COPY_BUFFER_ALIGNMENT - size % wgpu::COPY_BUFFER_ALIGNMENT;
+    let buffer = device.create_buffer(&wgpu::BufferDescriptor {
         label: None,
-        contents: bytemuck::cast_slice(&mesh.vertices),
-        usage: BufferUsages::VERTEX,
+        size,
+        usage: BufferUsages::VERTEX | BufferUsages::INDEX,
+        mapped_at_creation: true,
     });
-    let index = device.create_buffer_init(&BufferInitDescriptor {
-        label: None,
-        contents: bytemuck::cast_slice(&mesh.indices),
-        usage: BufferUsages::INDEX,
-    });
+    let vertex_slice_range = 0..vertex_slice_len;
+    let index_slice_range =
+        vertex_slice_len..vertex_slice_len + index_slice_len;
+    buffer
+        .slice(vertex_slice_range.clone())
+        .get_mapped_range_mut()
+        .clone_from_slice(vertices);
+    buffer
+        .slice(index_slice_range.clone())
+        .get_mapped_range_mut()
+        .clone_from_slice(indices);
+    buffer.unmap();
     MeshBuffers {
-        vertex,
-        index,
+        buffer,
+        vertex_slice_range,
+        index_slice_range,
         index_range,
     }
 }
@@ -156,7 +171,18 @@ pub trait MeshProvider {
 }
 
 pub struct MeshBuffers {
-    pub vertex: Buffer,
-    pub index: Buffer,
+    pub buffer: Buffer,
+    pub vertex_slice_range: Range<u64>,
+    pub index_slice_range: Range<u64>,
     pub index_range: Range<u32>,
+}
+
+impl MeshBuffers {
+    pub fn vertex_slice(&self) -> BufferSlice {
+        self.buffer.slice(self.vertex_slice_range.clone())
+    }
+
+    pub fn index_slice(&self) -> BufferSlice {
+        self.buffer.slice(self.index_slice_range.clone())
+    }
 }
