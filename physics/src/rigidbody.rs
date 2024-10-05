@@ -1,23 +1,31 @@
 use std::{cell::UnsafeCell, marker::PhantomData};
 
-use crate::{ObjID, Quat, Shape, Vec3, World};
+use crate::{Float, Mat3, ObjID, Quat, Shape, Vec3, World};
 
-#[must_use]
-pub struct StaticbodyBuilder<'w> {
+const DEFAULT_DENSITY: Float = 1.0;
+
+pub struct RigidbodyBuilder<'w> {
     world: &'w mut World,
     shape: Shape,
+    mass: Float,
     position: Vec3,
     rotation: Quat,
 }
 
-impl<'w> StaticbodyBuilder<'w> {
+impl<'w> RigidbodyBuilder<'w> {
     pub fn new(world: &'w mut World, shape: Shape) -> Self {
         Self {
             world,
             shape,
+            mass: shape.volume() * DEFAULT_DENSITY,
             position: Vec3::zeros(),
             rotation: Quat::identity(),
         }
+    }
+
+    pub fn mass(mut self, mass: Float) -> Self {
+        self.mass = mass;
+        self
     }
 
     pub fn position(mut self, position: Vec3) -> Self {
@@ -30,167 +38,112 @@ impl<'w> StaticbodyBuilder<'w> {
         self
     }
 
-    pub fn finish(self) -> StaticbodyId {
-        self.world
-            .staticbodies
-            .insert(self.shape, self.position, self.rotation)
+    pub fn finish(self) -> RigidbodyId {
+        self.world.rigidbodies.insert(
+            self.shape,
+            self.mass,
+            self.position,
+            self.rotation,
+        )
     }
 }
 
 #[derive(Default)]
-pub(crate) struct Staticbodies {
+pub(crate) struct Rigidbodies {
     id_counter: usize,
     // These vectors MUST be sorted by id
     id: Vec<usize>,
     shape: Vec<UnsafeCell<Shape>>,
+    inv_mass: Vec<UnsafeCell<Float>>,
+    inv_inertia: Vec<UnsafeCell<Mat3>>,
     position: Vec<UnsafeCell<Vec3>>,
     rotation: Vec<UnsafeCell<Quat>>,
 }
 
-impl Staticbodies {
+impl Rigidbodies {
     fn insert(
         &mut self,
         shape: Shape,
+        mass: Float,
         position: Vec3,
         rotation: Quat,
-    ) -> StaticbodyId {
+    ) -> RigidbodyId {
+        let inv_mass = mass.recip();
+        let inv_inertia = shape.inverse_inertia(mass);
+
         let id = self.id_counter;
         self.id_counter += 1;
         self.id.push(id);
         self.shape.push(UnsafeCell::new(shape));
+        self.inv_mass.push(UnsafeCell::new(inv_mass));
+        self.inv_inertia.push(UnsafeCell::new(inv_inertia));
         self.position.push(UnsafeCell::new(position));
         self.rotation.push(UnsafeCell::new(rotation));
-        StaticbodyId(id)
+        RigidbodyId(id)
     }
 
-    fn get(&self, id: StaticbodyId) -> Option<StaticbodyRef> {
+    fn get(&self, id: RigidbodyId) -> Option<RigidbodyRef> {
         let index = self.id.binary_search(&id.0).ok()?;
         // SAFETY
         // index returned by binary_search is in bounds
         // we have a reference to self, no mutable references can exist
-        Some(unsafe { StaticbodyRef::new(index, self) })
+        Some(unsafe { RigidbodyRef::new(index, self) })
     }
 
-    fn get_mut(&mut self, id: StaticbodyId) -> Option<StaticbodyRefMut> {
+    fn get_mut(&mut self, id: RigidbodyId) -> Option<RigidbodyRefMut> {
         let index = self.id.binary_search(&id.0).ok()?;
         // SAFETY
         // index returned by binary_search is in bounds
         // we have a mutable refernce to self, no other references can exist
-        Some(unsafe { StaticbodyRefMut::new(index, self) })
+        Some(unsafe { RigidbodyRefMut::new(index, self) })
     }
 
-    fn remove(&mut self, id: StaticbodyId) {
+    fn remove(&mut self, id: RigidbodyId) {
         let Ok(index) = self.id.binary_search(&id.0) else {
             return;
         };
         self.id.remove(index);
         self.shape.remove(index);
+        self.inv_mass.remove(index);
+        self.inv_inertia.remove(index);
         self.position.remove(index);
         self.rotation.remove(index);
     }
 }
 
-pub struct StaticbodyIter<'sbs> {
-    index: usize,
-    staticbodies: &'sbs Staticbodies,
-}
-
-impl<'sbs> StaticbodyIter<'sbs> {
-    pub(crate) fn new(staticbodies: &'sbs Staticbodies) -> Self {
-        Self {
-            index: 0,
-            staticbodies,
-        }
-    }
-}
-
-impl<'sbs> Iterator for StaticbodyIter<'sbs> {
-    type Item = StaticbodyRef<'sbs>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.index < self.staticbodies.id.len() {
-            // SAFETY
-            // index was bounds checked above.
-            // We have a reference to staticbodies,
-            // no mutable reference can exist.
-            let result =
-                unsafe { StaticbodyRef::new(self.index, self.staticbodies) };
-            self.index += 1;
-            Some(result)
-        } else {
-            None
-        }
-    }
-}
-
-pub struct StaticbodyIterMut<'sbs> {
-    index: usize,
-    staticbodies: &'sbs Staticbodies,
-    _marker: PhantomData<&'sbs mut Staticbodies>,
-}
-
-impl<'sbs> StaticbodyIterMut<'sbs> {
-    pub(crate) fn new(staticbodies: &'sbs mut Staticbodies) -> Self {
-        Self {
-            index: 0,
-            staticbodies,
-            _marker: PhantomData,
-        }
-    }
-}
-
-impl<'sbs> Iterator for StaticbodyIterMut<'sbs> {
-    type Item = StaticbodyRefMut<'sbs>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.index < self.staticbodies.id.len() {
-            // SAFETY
-            // index was bounds checked above.
-            // This iterator was created from a mutable reference to
-            // staticbodies, therefore no other references can exist to it.
-            let result =
-                unsafe { StaticbodyRefMut::new(self.index, self.staticbodies) };
-            self.index += 1;
-            Some(result)
-        } else {
-            None
-        }
-    }
-}
-
 #[derive(Clone, Copy)]
-pub struct StaticbodyId(usize);
+pub struct RigidbodyId(usize);
 
-impl<'w> ObjID<'w> for StaticbodyId {
-    type Ref = StaticbodyRef<'w>;
+impl<'w> ObjID<'w> for RigidbodyId {
+    type Ref = RigidbodyRef<'w>;
 
-    type RefMut = StaticbodyRefMut<'w>;
+    type RefMut = RigidbodyRefMut<'w>;
 
     fn get(self, world: &'w World) -> Option<Self::Ref> {
-        world.staticbodies.get(self)
+        world.rigidbodies.get(self)
     }
 
     fn get_mut(self, world: &'w mut World) -> Option<Self::RefMut> {
-        world.staticbodies.get_mut(self)
+        world.rigidbodies.get_mut(self)
     }
 
     fn remove(self, world: &'w mut World) {
-        world.staticbodies.remove(self)
+        world.rigidbodies.remove(self)
     }
 }
 
-pub struct StaticbodyRef<'sbs> {
+pub struct RigidbodyRef<'rbs> {
     index: usize,
-    staticbodies: &'sbs Staticbodies,
+    staticbodies: &'rbs Rigidbodies,
 }
 
-impl<'sbs> StaticbodyRef<'sbs> {
+impl<'rbs> RigidbodyRef<'rbs> {
     /// # SAFETY
     /// Callers must guarantee, that index is in bounds.
     /// Callers must guarantee, that there are no mutable references.
     pub(crate) unsafe fn new(
         index: usize,
-        staticbodies: &'sbs Staticbodies,
+        staticbodies: &'rbs Rigidbodies,
     ) -> Self {
         Self {
             index,
@@ -203,6 +156,15 @@ impl<'sbs> StaticbodyRef<'sbs> {
         let cell = unsafe { self.staticbodies.shape.get_unchecked(self.index) };
         // SAFETY: Caller guaranteed, that there are no mutable references.
         unsafe { &*cell.get() }
+    }
+
+    pub fn mass(&self) -> Float {
+        // SAFETY: Caller guaranteed, that the index is in bounds.
+        let cell =
+            unsafe { self.staticbodies.inv_mass.get_unchecked(self.index) };
+        // SAFETY: Caller guaranteed, that there are no mutable references.
+        let inv_mass = unsafe { &*cell.get() };
+        inv_mass.recip()
     }
 
     pub fn position(&self) -> &Vec3 {
@@ -222,19 +184,19 @@ impl<'sbs> StaticbodyRef<'sbs> {
     }
 }
 
-pub struct StaticbodyRefMut<'sbs> {
+pub struct RigidbodyRefMut<'rbs> {
     index: usize,
-    staticbodies: &'sbs Staticbodies,
-    _marker: PhantomData<&'sbs mut Staticbodies>,
+    staticbodies: &'rbs Rigidbodies,
+    _marker: PhantomData<&'rbs mut Rigidbodies>,
 }
 
-impl<'sbs> StaticbodyRefMut<'sbs> {
+impl<'rbs> RigidbodyRefMut<'rbs> {
     /// # SAFETY
     /// Callers must guarantee, that index is in bounds.
     /// Callers must guarantee, that there are no other references.
     pub(crate) unsafe fn new(
         index: usize,
-        staticbodies: &'sbs Staticbodies,
+        staticbodies: &'rbs Rigidbodies,
     ) -> Self {
         Self {
             index,
@@ -264,5 +226,73 @@ impl<'sbs> StaticbodyRefMut<'sbs> {
             unsafe { self.staticbodies.rotation.get_unchecked(self.index) };
         // SAFETY: Caller guaranteed, that there are no other references.
         unsafe { &mut *cell.get() }
+    }
+}
+
+pub struct RigidbodyIter<'rbs> {
+    index: usize,
+    rigidbodies: &'rbs Rigidbodies,
+}
+
+impl<'rbs> RigidbodyIter<'rbs> {
+    pub(crate) fn new(rigidbodies: &'rbs Rigidbodies) -> Self {
+        Self {
+            index: 0,
+            rigidbodies,
+        }
+    }
+}
+
+impl<'rbs> Iterator for RigidbodyIter<'rbs> {
+    type Item = RigidbodyRef<'rbs>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.index < self.rigidbodies.id.len() {
+            // SAFETY
+            // index was bounds checked above.
+            // We have a reference to rigidbodies,
+            // no mutable reference can exist.
+            let result =
+                unsafe { RigidbodyRef::new(self.index, self.rigidbodies) };
+            self.index += 1;
+            Some(result)
+        } else {
+            None
+        }
+    }
+}
+
+pub struct RigidbodyIterMut<'rbs> {
+    index: usize,
+    rigidbodies: &'rbs Rigidbodies,
+    _marker: PhantomData<&'rbs mut Rigidbodies>,
+}
+
+impl<'rbs> RigidbodyIterMut<'rbs> {
+    pub(crate) fn new(rigidbodies: &'rbs mut Rigidbodies) -> Self {
+        Self {
+            index: 0,
+            rigidbodies,
+            _marker: PhantomData,
+        }
+    }
+}
+
+impl<'rbs> Iterator for RigidbodyIterMut<'rbs> {
+    type Item = RigidbodyRefMut<'rbs>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.index < self.rigidbodies.id.len() {
+            // SAFETY
+            // index was bounds checked above.
+            // This iterator was created from a mutable reference to
+            // rigidbodies, therefore no other references can exist to it.
+            let result =
+                unsafe { RigidbodyRefMut::new(self.index, self.rigidbodies) };
+            self.index += 1;
+            Some(result)
+        } else {
+            None
+        }
     }
 }
