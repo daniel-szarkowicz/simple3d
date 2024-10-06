@@ -62,6 +62,8 @@ pub(crate) struct Rigidbodies {
     inv_inertia: Vec<UnsafeCell<Mat3>>,
     position: Vec<UnsafeCell<Vec3>>,
     rotation: Vec<UnsafeCell<Quat>>,
+    momentum: Vec<UnsafeCell<Vec3>>,
+    angular_momentum: Vec<UnsafeCell<Vec3>>,
 }
 
 impl Rigidbodies {
@@ -74,6 +76,8 @@ impl Rigidbodies {
     ) -> RigidbodyId {
         let inv_mass = mass.recip();
         let inv_inertia = shape.inverse_inertia(mass);
+        let momentum = Vec3::zeros();
+        let angular_momentum = Vec3::zeros();
 
         let id = self.id_counter;
         self.id_counter += 1;
@@ -83,6 +87,9 @@ impl Rigidbodies {
         self.inv_inertia.push(UnsafeCell::new(inv_inertia));
         self.position.push(UnsafeCell::new(position));
         self.rotation.push(UnsafeCell::new(rotation));
+        self.momentum.push(UnsafeCell::new(momentum));
+        self.angular_momentum
+            .push(UnsafeCell::new(angular_momentum));
         RigidbodyId(id)
     }
 
@@ -112,6 +119,8 @@ impl Rigidbodies {
         self.inv_inertia.remove(index);
         self.position.remove(index);
         self.rotation.remove(index);
+        self.momentum.remove(index);
+        self.angular_momentum.remove(index);
     }
 
     // TODO: properly update the tree instead of creating a new one
@@ -127,6 +136,22 @@ impl Rigidbodies {
             })
             .collect();
         self.rtree = RTree::new(leaves);
+    }
+
+    pub(crate) fn update_bodies(&mut self, delta: Float) {
+        for i in 0..self.id.len() {
+            *self.position[i].get_mut() += delta
+                * *self.inv_mass[i].get_mut()
+                * *self.momentum[i].get_mut();
+            let rotation_matrix =
+                self.rotation[i].get_mut().to_rotation_matrix();
+            let inverse_inertia = rotation_matrix
+                * *self.inv_inertia[i].get_mut()
+                * rotation_matrix.inverse();
+            *self.rotation[i].get_mut() *= Quat::new(
+                delta * inverse_inertia * *self.angular_momentum[i].get_mut(),
+            );
+        }
     }
 
     pub(crate) fn aabbs(&self) -> AABBS<usize> {
@@ -209,7 +234,7 @@ impl<'rbs> RigidbodyRef<'rbs> {
 
 pub struct RigidbodyRefMut<'rbs> {
     index: usize,
-    staticbodies: &'rbs Rigidbodies,
+    rigidbodies: &'rbs Rigidbodies,
     _marker: PhantomData<&'rbs mut Rigidbodies>,
 }
 
@@ -223,14 +248,14 @@ impl<'rbs> RigidbodyRefMut<'rbs> {
     ) -> Self {
         Self {
             index,
-            staticbodies,
+            rigidbodies: staticbodies,
             _marker: PhantomData,
         }
     }
 
     pub fn shape(&mut self) -> &mut Shape {
         // SAFETY: Caller guaranteed, that the index is in bounds.
-        let cell = unsafe { self.staticbodies.shape.get_unchecked(self.index) };
+        let cell = unsafe { self.rigidbodies.shape.get_unchecked(self.index) };
         // SAFETY: Caller guaranteed, that there are no other references.
         unsafe { &mut *cell.get() }
     }
@@ -238,7 +263,7 @@ impl<'rbs> RigidbodyRefMut<'rbs> {
     pub fn position(&mut self) -> &mut Vec3 {
         // SAFETY: Caller guaranteed, that the index is in bounds.
         let cell =
-            unsafe { self.staticbodies.position.get_unchecked(self.index) };
+            unsafe { self.rigidbodies.position.get_unchecked(self.index) };
         // SAFETY: Caller guaranteed, that there are no other references.
         unsafe { &mut *cell.get() }
     }
@@ -246,9 +271,32 @@ impl<'rbs> RigidbodyRefMut<'rbs> {
     pub fn rotation(&mut self) -> &mut Quat {
         // SAFETY: Caller guaranteed, that the index is in bounds.
         let cell =
-            unsafe { self.staticbodies.rotation.get_unchecked(self.index) };
+            unsafe { self.rigidbodies.rotation.get_unchecked(self.index) };
         // SAFETY: Caller guaranteed, that there are no other references.
         unsafe { &mut *cell.get() }
+    }
+
+    pub fn momentum(&mut self) -> &mut Vec3 {
+        // SAFETY: Caller guaranteed, that the index is in bounds.
+        let cell =
+            unsafe { self.rigidbodies.momentum.get_unchecked(self.index) };
+        // SAFETY: Caller guaranteed, that there are no other references.
+        unsafe { &mut *cell.get() }
+    }
+
+    pub fn angular_momentum(&mut self) -> &mut Vec3 {
+        // SAFETY: Caller guaranteed, that the index is in bounds.
+        let cell = unsafe {
+            self.rigidbodies.angular_momentum.get_unchecked(self.index)
+        };
+        // SAFETY: Caller guaranteed, that there are no other references.
+        unsafe { &mut *cell.get() }
+    }
+
+    pub fn apply_impulse(&mut self, attack_point: Vec3, impulse: Vec3) {
+        *self.momentum() += impulse;
+        let offset = attack_point - *self.position();
+        *self.angular_momentum() += offset.cross(&impulse);
     }
 }
 

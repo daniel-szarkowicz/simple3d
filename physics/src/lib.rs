@@ -57,7 +57,8 @@ impl World {
         RigidbodyIterMut::new(&mut self.rigidbodies)
     }
 
-    pub fn update(&mut self) {
+    pub fn update(&mut self, delta: Float) {
+        self.rigidbodies.update_bodies(delta);
         self.staticbodies.update_rtree();
         self.rigidbodies.update_rtree();
     }
