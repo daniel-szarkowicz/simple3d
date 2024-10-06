@@ -1,6 +1,9 @@
 use std::{cell::UnsafeCell, marker::PhantomData};
 
-use crate::{Float, Mat3, ObjID, Quat, Shape, Vec3, World};
+use crate::{
+    rtree::{Leaf, RTree, AABBS},
+    Float, Mat3, ObjID, Quat, Shape, Vec3, World,
+};
 
 const DEFAULT_DENSITY: Float = 1.0;
 
@@ -52,6 +55,7 @@ impl<'w> RigidbodyBuilder<'w> {
 pub(crate) struct Rigidbodies {
     id_counter: usize,
     // These vectors MUST be sorted by id
+    rtree: RTree<usize>,
     id: Vec<usize>,
     shape: Vec<UnsafeCell<Shape>>,
     inv_mass: Vec<UnsafeCell<Float>>,
@@ -108,6 +112,25 @@ impl Rigidbodies {
         self.inv_inertia.remove(index);
         self.position.remove(index);
         self.rotation.remove(index);
+    }
+
+    // TODO: properly update the tree instead of creating a new one
+    pub(crate) fn update_rtree(&mut self) {
+        let leaves = (0..self.id.len())
+            .map(|i| Leaf {
+                aabb: crate::aabb(
+                    self.shape[i].get_mut(),
+                    self.position[i].get_mut(),
+                    self.rotation[i].get_mut(),
+                ),
+                data: i,
+            })
+            .collect();
+        self.rtree = RTree::new(leaves);
+    }
+
+    pub(crate) fn aabbs(&self) -> AABBS<usize> {
+        self.rtree.aabbs()
     }
 }
 

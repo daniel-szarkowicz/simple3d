@@ -1,6 +1,8 @@
 mod rigidbody;
+pub mod rtree;
 mod staticbody;
 pub use rigidbody::*;
+use rtree::{AABB, AABBS};
 pub use staticbody::*;
 
 pub(crate) type Float = f64;
@@ -54,6 +56,15 @@ impl World {
     pub fn rigidbodies_mut(&mut self) -> RigidbodyIterMut {
         RigidbodyIterMut::new(&mut self.rigidbodies)
     }
+
+    pub fn update(&mut self) {
+        self.staticbodies.update_rtree();
+        self.rigidbodies.update_rtree();
+    }
+
+    pub fn aabbs(&self) -> impl Iterator<Item = (&AABB, usize)> {
+        self.staticbodies.aabbs().chain(self.rigidbodies.aabbs())
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -99,6 +110,40 @@ impl Shape {
             ),
         };
         inertia.try_inverse().expect("Inertia tensor is invertible")
+    }
+}
+
+pub(crate) fn aabb(shape: &Shape, position: &Vec3, rotation: &Quat) -> AABB {
+    match shape {
+        Shape::Sphere { diameter } => {
+            let r = diameter / 2.0;
+            let offset = Vec3::new(r, r, r);
+            AABB {
+                min: position - offset,
+                max: position + offset,
+            }
+        }
+        Shape::Box {
+            width,
+            height,
+            depth,
+        } => {
+            let rotation = rotation.to_rotation_matrix();
+            let mut min = *position;
+            let mut max = *position;
+            for x in [-0.5, 0.5] {
+                for y in [-0.5, 0.5] {
+                    for z in [-0.5, 0.5] {
+                        let p = position
+                            + rotation
+                                * Vec3::new(x * width, y * height, z * depth);
+                        min = min.inf(&p);
+                        max = max.sup(&p);
+                    }
+                }
+            }
+            AABB { min, max }
+        }
     }
 }
 

@@ -1,6 +1,9 @@
-use std::{cell::UnsafeCell, marker::PhantomData};
+use std::{cell::UnsafeCell, iter::zip, marker::PhantomData};
 
-use crate::{ObjID, Quat, Shape, Vec3, World};
+use crate::{
+    rtree::{Leaf, RTree, AABBS},
+    ObjID, Quat, Shape, Vec3, World,
+};
 
 #[must_use]
 pub struct StaticbodyBuilder<'w> {
@@ -41,6 +44,7 @@ impl<'w> StaticbodyBuilder<'w> {
 pub(crate) struct Staticbodies {
     id_counter: usize,
     // These vectors MUST be sorted by id
+    rtree: RTree<usize>,
     id: Vec<usize>,
     shape: Vec<UnsafeCell<Shape>>,
     position: Vec<UnsafeCell<Vec3>>,
@@ -87,6 +91,25 @@ impl Staticbodies {
         self.shape.remove(index);
         self.position.remove(index);
         self.rotation.remove(index);
+    }
+
+    // TODO: properly update the tree instead of creating a new one
+    pub(crate) fn update_rtree(&mut self) {
+        let leaves = (0..self.id.len())
+            .map(|i| Leaf {
+                aabb: crate::aabb(
+                    self.shape[i].get_mut(),
+                    self.position[i].get_mut(),
+                    self.rotation[i].get_mut(),
+                ),
+                data: i,
+            })
+            .collect();
+        self.rtree = RTree::new(leaves);
+    }
+
+    pub(crate) fn aabbs(&self) -> AABBS<usize> {
+        self.rtree.aabbs()
     }
 }
 

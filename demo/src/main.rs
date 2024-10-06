@@ -3,7 +3,7 @@ use graphics::canvas::Canvas;
 use graphics::geometry::*;
 use graphics::math::Transform;
 use nalgebra::Vector3;
-use physics::{ObjID, RigidbodyId, Shape, World};
+use physics::{Shape, World};
 
 fn main() {
     App::run_with(State::new());
@@ -11,7 +11,6 @@ fn main() {
 
 struct State {
     world: World,
-    sphere: RigidbodyId,
 }
 
 impl State {
@@ -25,66 +24,32 @@ impl State {
             })
             .position(Vector3::new(0.0, -10.0, 0.0))
             .finish();
-        let sphere = world
-            .add_rigidbody(Shape::Sphere { diameter: 4.0 })
-            .finish();
-        Self { world, sphere }
+        for x in -5..=5 {
+            for y in -5..=5 {
+                for z in -5..=5 {
+                    world
+                        .add_rigidbody(Shape::Sphere { diameter: 0.5 })
+                        .position(Vector3::new(x as f64, y as f64, z as f64))
+                        .finish();
+                }
+            }
+        }
+        world.update();
+        Self { world }
     }
 }
 
 impl AppState for State {
-    fn update(&mut self) {
-        if let Some(mut sphere) = self.world.get_mut(self.sphere) {
-            sphere.position().y -= 0.1 / 60.0;
-        }
-    }
+    fn update(&mut self) {}
 
     fn draw(&self, canvas: &mut Canvas) {
-        for sb in self.world.staticbodies() {
-            match sb.shape() {
-                Shape::Sphere { diameter } => canvas.draw(Ellipsoid).scale(
-                    *diameter as f32,
-                    *diameter as f32,
-                    *diameter as f32,
-                ),
-                Shape::Box {
-                    width,
-                    height,
-                    depth,
-                } => canvas.draw(Box).scale(
-                    *width as f32,
-                    *height as f32,
-                    *depth as f32,
-                ),
-            }
-            .translate(
-                sb.position().x as f32,
-                sb.position().y as f32,
-                sb.position().z as f32,
-            );
-        }
-        for rb in self.world.rigidbodies() {
-            match rb.shape() {
-                Shape::Sphere { diameter } => canvas.draw(Ellipsoid).scale(
-                    *diameter as f32,
-                    *diameter as f32,
-                    *diameter as f32,
-                ),
-                Shape::Box {
-                    width,
-                    height,
-                    depth,
-                } => canvas.draw(Box).scale(
-                    *width as f32,
-                    *height as f32,
-                    *depth as f32,
-                ),
-            }
-            .translate(
-                rb.position().x as f32,
-                rb.position().y as f32,
-                rb.position().z as f32,
-            );
+        for (aabb, _) in self.world.aabbs() {
+            let pos = aabb.pos().cast();
+            let size = aabb.size().cast();
+            canvas
+                .draw(BoxLines)
+                .scale(size.x, size.y, size.z)
+                .translate(pos.x, pos.y, pos.z);
         }
     }
 }
