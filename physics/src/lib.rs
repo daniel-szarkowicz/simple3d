@@ -1,72 +1,18 @@
-mod rigidbody;
-pub mod rtree;
+mod gjk;
 mod staticbody;
-pub use rigidbody::*;
-use rtree::{AABB, AABBS};
 pub use staticbody::*;
+mod rigidbody;
+pub use rigidbody::*;
+pub mod rtree;
+use rtree::AABB;
+mod world;
+pub use world::*;
 
 pub(crate) type Float = f64;
 pub(crate) type Vec3 = nalgebra::Vector3<Float>;
 pub(crate) type Quat = nalgebra::UnitQuaternion<Float>;
 pub(crate) type Mat3 = nalgebra::Matrix3<Float>;
 pub(crate) type Mat4 = nalgebra::Matrix4<Float>;
-
-#[derive(Default)]
-pub struct World {
-    staticbodies: Staticbodies,
-    rigidbodies: Rigidbodies,
-}
-
-impl World {
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    pub fn get<'w, ID: ObjID<'w>>(&'w self, id: ID) -> Option<ID::Ref> {
-        id.get(self)
-    }
-
-    pub fn get_mut<'w, ID: ObjID<'w>>(
-        &'w mut self,
-        id: ID,
-    ) -> Option<ID::RefMut> {
-        id.get_mut(self)
-    }
-
-    pub fn add_staticbody(&mut self, shape: Shape) -> StaticbodyBuilder {
-        StaticbodyBuilder::new(self, shape)
-    }
-
-    pub fn staticbodies(&self) -> StaticbodyIter {
-        StaticbodyIter::new(&self.staticbodies)
-    }
-
-    pub fn staticbodies_mut(&mut self) -> StaticbodyIterMut {
-        StaticbodyIterMut::new(&mut self.staticbodies)
-    }
-
-    pub fn add_rigidbody(&mut self, shape: Shape) -> RigidbodyBuilder {
-        RigidbodyBuilder::new(self, shape)
-    }
-
-    pub fn rigidbodies(&self) -> RigidbodyIter {
-        RigidbodyIter::new(&self.rigidbodies)
-    }
-
-    pub fn rigidbodies_mut(&mut self) -> RigidbodyIterMut {
-        RigidbodyIterMut::new(&mut self.rigidbodies)
-    }
-
-    pub fn update(&mut self, delta: Float) {
-        self.rigidbodies.update_bodies(delta);
-        self.staticbodies.update_rtree();
-        self.rigidbodies.update_rtree();
-    }
-
-    pub fn aabbs(&self) -> impl Iterator<Item = (&AABB, usize)> {
-        self.staticbodies.aabbs().chain(self.rigidbodies.aabbs())
-    }
-}
 
 #[derive(Clone, Copy)]
 pub enum Shape {

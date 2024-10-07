@@ -11,6 +11,9 @@ pub struct Ellipsoid;
 #[derive(Clone, Copy)]
 pub struct BoxLines;
 
+#[derive(Clone, Copy)]
+pub struct EllipsoidLines;
+
 impl MeshProvider for Box {
     type Vertex = PNVertex;
     type Kind = Static;
@@ -131,6 +134,27 @@ impl MeshProvider for BoxLines {
              8,  9, 10, 11, 12, 13, 14, 15,
             16, 17, 18, 19, 20, 21, 22, 23,
         ];
+        Mesh { vertices, indices }
+    }
+}
+
+impl MeshProvider for EllipsoidLines {
+    type Vertex = PDVertex;
+    type Kind = Static;
+
+    fn create_mesh(self) -> Mesh<Self::Vertex> {
+        let Polyhedron { vertices, faces } = icosphere(3);
+        let vertices = vertices
+            .into_iter()
+            .map(|p| PDVertex {
+                position: p,
+                direction: p,
+            })
+            .collect();
+        let indices = faces
+            .into_iter()
+            .flat_map(|f| f.map(|i| i as u32))
+            .collect();
         Mesh { vertices, indices }
     }
 }

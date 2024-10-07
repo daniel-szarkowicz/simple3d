@@ -44,11 +44,11 @@ impl<'w> StaticbodyBuilder<'w> {
 pub(crate) struct Staticbodies {
     id_counter: usize,
     // These vectors MUST be sorted by id
-    rtree: RTree<usize>,
+    pub(crate) rtree: RTree<usize>,
     id: Vec<usize>,
-    shape: Vec<UnsafeCell<Shape>>,
-    position: Vec<UnsafeCell<Vec3>>,
-    rotation: Vec<UnsafeCell<Quat>>,
+    pub(crate) shape: Vec<UnsafeCell<Shape>>,
+    pub(crate) position: Vec<UnsafeCell<Vec3>>,
+    pub(crate) rotation: Vec<UnsafeCell<Quat>>,
 }
 
 impl Staticbodies {
