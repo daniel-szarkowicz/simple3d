@@ -23,11 +23,11 @@ impl State {
                 height: 0.5,
                 depth: 0.5,
             })
-            .position(Vector3::new(0.0, 6.0, 0.0))
+            .position(Vector3::new(0.0, 10.0, 0.0))
             .finish();
-        for x in -1..=1 {
-            for y in -5..=5 {
-                for z in -1..=1 {
+        for x in -0..=0 {
+            for y in -3..=3 {
+                for z in -0..=0 {
                     let xyz = Vector3::new(x as f64, y as f64, z as f64);
                     world
                         // .add_rigidbody(Shape::Sphere { diameter: 0.5 })
@@ -45,7 +45,7 @@ impl State {
         let mut body = world.get_mut(test_body).unwrap();
         body.apply_impulse(
             Vector3::new(0.1, 10.0, 0.1),
-            Vector3::new(0.0, -0.01, 0.0),
+            Vector3::new(0.0, -0.05, 0.0),
         );
         Self { world, test_body }
     }

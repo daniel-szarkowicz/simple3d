@@ -60,6 +60,7 @@ impl World {
         self.rigidbodies.update_rtree();
         self.rigidbodies.update_rb_contacts();
         self.rigidbodies.update_sb_contacts(&self.staticbodies);
+        self.rigidbodies.resolve_rb_contacts();
     }
 
     pub fn aabbs(&self) -> impl Iterator<Item = (&AABB, usize)> {

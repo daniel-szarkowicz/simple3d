@@ -1,4 +1,4 @@
-use std::{cell::UnsafeCell, marker::PhantomData};
+use std::{cell::UnsafeCell, marker::PhantomData, ops::Deref};
 
 use crate::{
     gjk::{self},
@@ -7,6 +7,8 @@ use crate::{
 };
 
 const DEFAULT_DENSITY: Float = 1.0;
+const BOUNCYNESS: Float = 0.75;
+const FRICTION: Float = 0.5;
 
 pub struct RigidbodyBuilder<'w> {
     world: &'w mut World,
@@ -217,6 +219,18 @@ impl Rigidbodies {
         );
     }
 
+    pub(crate) fn resolve_rb_contacts(&mut self) {
+        for (i, v1, j, v2, n) in self.rb_contacts.iter() {
+            // SAFETY
+            // when creating contacts we filtered i < j, so i != j
+            // we have mutable reference to self, so no other references to
+            // can exist
+            let rb1 = unsafe { RigidbodyRefMut::new(*i, self) };
+            let rb2 = unsafe { RigidbodyRefMut::new(*j, self) };
+            resolve_rb_contact(rb1, rb2, *v1, *v2, *n);
+        }
+    }
+
     pub(crate) fn aabbs(&self) -> AABBS<usize> {
         self.rtree.aabbs()
     }
@@ -240,6 +254,40 @@ fn check_contact(
     r2: &Quat,
 ) -> Option<(Vec3, Vec3, Vec3)> {
     gjk::gjk(&(s1, p1, r1), &(s2, p2, r2))
+}
+
+fn resolve_rb_contact(
+    mut rb1: RigidbodyRefMut,
+    mut rb2: RigidbodyRefMut,
+    p1: Vec3,
+    p2: Vec3,
+    n: Vec3,
+) {
+    let rel_v = rb1.local_velocity(p1) - rb2.local_velocity(p2);
+    let rel_v_normal = n.dot(&rel_v);
+    if rel_v_normal > 0.0 {
+        // the bodies are separating
+        return;
+    }
+
+    let normal_impulse_strength = -(BOUNCYNESS + 1.0) * rel_v_normal
+        / (rb1.impulse_effectivness(p1, n) + rb2.impulse_effectivness(p2, n));
+
+    let rel_v_tangent = rel_v - n * rel_v_normal;
+    let rel_v_tangent_dir = rel_v_tangent
+        .try_normalize(Float::EPSILON)
+        .unwrap_or_else(Vec3::x);
+
+    let friction_impulse_max_strength = -rel_v_tangent_dir.dot(&rel_v)
+        / (rb1.impulse_effectivness(p1, rel_v_tangent_dir)
+            + rb2.impulse_effectivness(p2, rel_v_tangent_dir));
+    let friction_impulse_strength =
+        friction_impulse_max_strength.min(FRICTION * normal_impulse_strength);
+    // TODO: add small separating force based on penetration depth
+    let impulse = n * (normal_impulse_strength)
+        + rel_v_tangent_dir * friction_impulse_strength;
+    rb1.apply_impulse(p1, impulse);
+    rb2.apply_impulse(p2, -impulse);
 }
 
 impl gjk::Support for (&Shape, &Vec3, &Quat) {
@@ -321,13 +369,24 @@ impl<'rbs> RigidbodyRef<'rbs> {
         unsafe { &*cell.get() }
     }
 
-    pub fn mass(&self) -> Float {
+    pub fn inv_mass(&self) -> &Float {
         // SAFETY: Caller guaranteed, that the index is in bounds.
         let cell =
             unsafe { self.rigidbodies.inv_mass.get_unchecked(self.index) };
         // SAFETY: Caller guaranteed, that there are no mutable references.
-        let inv_mass = unsafe { &*cell.get() };
-        inv_mass.recip()
+        unsafe { &*cell.get() }
+    }
+
+    pub fn mass(&self) -> Float {
+        self.inv_mass().recip()
+    }
+
+    pub fn inverse_inertia(&self) -> Mat3 {
+        let rotation_matrix = self.rotation().to_rotation_matrix();
+        let cell =
+            unsafe { self.rigidbodies.inv_inertia.get_unchecked(self.index) };
+        let inv_inertia = unsafe { &*cell.get() };
+        rotation_matrix * inv_inertia * rotation_matrix.inverse()
     }
 
     pub fn position(&self) -> &Vec3 {
@@ -345,11 +404,46 @@ impl<'rbs> RigidbodyRef<'rbs> {
         // SAFETY: Caller guaranteed, that there are no mutable references.
         unsafe { &*cell.get() }
     }
+
+    pub fn momentum(&self) -> &Vec3 {
+        // SAFETY: Caller guaranteed, that the index is in bounds.
+        let cell =
+            unsafe { self.rigidbodies.momentum.get_unchecked(self.index) };
+        // SAFETY: Caller guaranteed, that there are no mutable references.
+        unsafe { &*cell.get() }
+    }
+
+    pub fn angular_momentum(&self) -> &Vec3 {
+        // SAFETY: Caller guaranteed, that the index is in bounds.
+        let cell = unsafe {
+            self.rigidbodies.angular_momentum.get_unchecked(self.index)
+        };
+        // SAFETY: Caller guaranteed, that there are no mutable references.
+        unsafe { &*cell.get() }
+    }
+
+    pub fn local_velocity(&self, position: Vec3) -> Vec3 {
+        self.momentum() * *self.inv_mass()
+            + (self.inverse_inertia() * self.angular_momentum())
+                .cross(&(position - self.position()))
+    }
+
+    pub fn impulse_effectivness(
+        &self,
+        position: Vec3,
+        direction: Vec3,
+    ) -> Float {
+        let offset = position - self.position();
+        direction.dot(
+            &(direction * *self.inv_mass()
+                + (self.inverse_inertia() * offset.cross(&direction))
+                    .cross(&offset)),
+        )
+    }
 }
 
 pub struct RigidbodyRefMut<'rbs> {
-    index: usize,
-    rigidbodies: &'rbs Rigidbodies,
+    inner: RigidbodyRef<'rbs>,
     _marker: PhantomData<&'rbs mut Rigidbodies>,
 }
 
@@ -362,56 +456,34 @@ impl<'rbs> RigidbodyRefMut<'rbs> {
         rigidbodies: &'rbs Rigidbodies,
     ) -> Self {
         Self {
-            index,
-            rigidbodies,
+            inner: RigidbodyRef { index, rigidbodies },
             _marker: PhantomData,
         }
     }
 
-    pub fn shape(&mut self) -> &mut Shape {
+    pub fn apply_impulse(&mut self, attack_point: Vec3, impulse: Vec3) {
         // SAFETY: Caller guaranteed, that the index is in bounds.
-        let cell = unsafe { self.rigidbodies.shape.get_unchecked(self.index) };
-        // SAFETY: Caller guaranteed, that there are no other references.
-        unsafe { &mut *cell.get() }
-    }
-
-    pub fn position(&mut self) -> &mut Vec3 {
-        // SAFETY: Caller guaranteed, that the index is in bounds.
-        let cell =
-            unsafe { self.rigidbodies.position.get_unchecked(self.index) };
-        // SAFETY: Caller guaranteed, that there are no other references.
-        unsafe { &mut *cell.get() }
-    }
-
-    pub fn rotation(&mut self) -> &mut Quat {
-        // SAFETY: Caller guaranteed, that the index is in bounds.
-        let cell =
-            unsafe { self.rigidbodies.rotation.get_unchecked(self.index) };
-        // SAFETY: Caller guaranteed, that there are no other references.
-        unsafe { &mut *cell.get() }
-    }
-
-    pub fn momentum(&mut self) -> &mut Vec3 {
-        // SAFETY: Caller guaranteed, that the index is in bounds.
-        let cell =
+        let momentum_cell =
             unsafe { self.rigidbodies.momentum.get_unchecked(self.index) };
-        // SAFETY: Caller guaranteed, that there are no other references.
-        unsafe { &mut *cell.get() }
-    }
-
-    pub fn angular_momentum(&mut self) -> &mut Vec3 {
+        // SAFETY: Caller guaranteed, that there are no mutable references.
+        let momentum = unsafe { &mut *momentum_cell.get() };
         // SAFETY: Caller guaranteed, that the index is in bounds.
-        let cell = unsafe {
+        let angular_momentum_cell = unsafe {
             self.rigidbodies.angular_momentum.get_unchecked(self.index)
         };
-        // SAFETY: Caller guaranteed, that there are no other references.
-        unsafe { &mut *cell.get() }
-    }
-
-    pub fn apply_impulse(&mut self, attack_point: Vec3, impulse: Vec3) {
-        *self.momentum() += impulse;
+        // SAFETY: Caller guaranteed, that there are no mutable references.
+        let angular_momentum = unsafe { &mut *angular_momentum_cell.get() };
+        *momentum += impulse;
         let offset = attack_point - *self.position();
-        *self.angular_momentum() += offset.cross(&impulse);
+        *angular_momentum += offset.cross(&impulse);
+    }
+}
+
+impl<'rbs> Deref for RigidbodyRefMut<'rbs> {
+    type Target = RigidbodyRef<'rbs>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.inner
     }
 }
 
