@@ -1,4 +1,4 @@
-use std::{cell::UnsafeCell, iter::zip, marker::PhantomData};
+use std::{cell::UnsafeCell, marker::PhantomData};
 
 use crate::{
     rtree::{Leaf, RTree, AABBS},

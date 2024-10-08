@@ -17,6 +17,14 @@ struct State {
 impl State {
     fn new() -> Self {
         let mut world = World::new();
+        world
+            .add_staticbody(Shape::Box {
+                width: 100.0,
+                height: 10.0,
+                depth: 100.0,
+            })
+            .position(Vector3::new(0.0, -15.0, 0.0))
+            .finish();
         let test_body = world
             .add_rigidbody(Shape::Box {
                 width: 0.5,
@@ -45,7 +53,7 @@ impl State {
         let mut body = world.get_mut(test_body).unwrap();
         body.apply_impulse(
             Vector3::new(0.1, 10.0, 0.1),
-            Vector3::new(0.0, -0.05, 0.0),
+            Vector3::new(0.0, -0.5, 0.0),
         );
         Self { world, test_body }
     }
@@ -73,6 +81,27 @@ impl AppState for State {
                     height,
                     depth,
                 } => canvas.draw(BoxLines).scale(
+                    *width as f32,
+                    *height as f32,
+                    *depth as f32,
+                ),
+            };
+            drawing.transform(&transform.cast());
+        }
+        for sb in self.world.staticbodies() {
+            let transform = Translation::from(*sb.position()).to_homogeneous()
+                * sb.rotation().to_rotation_matrix().to_homogeneous();
+            let drawing = match sb.shape() {
+                Shape::Sphere { diameter } => canvas.draw(Ellipsoid).scale(
+                    *diameter as f32,
+                    *diameter as f32,
+                    *diameter as f32,
+                ),
+                Shape::Box {
+                    width,
+                    height,
+                    depth,
+                } => canvas.draw(Box).scale(
                     *width as f32,
                     *height as f32,
                     *depth as f32,

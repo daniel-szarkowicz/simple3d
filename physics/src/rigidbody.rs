@@ -3,7 +3,7 @@ use std::{cell::UnsafeCell, marker::PhantomData, ops::Deref};
 use crate::{
     gjk::{self},
     rtree::{Leaf, QueryItem, RTree, AABBS},
-    Float, Mat3, ObjID, Quat, Shape, Staticbodies, Vec3, World,
+    Float, Mat3, ObjID, Quat, Shape, Staticbodies, StaticbodyRef, Vec3, World,
 };
 
 const DEFAULT_DENSITY: Float = 1.0;
@@ -205,7 +205,6 @@ impl Rigidbodies {
                         })
                         .map(move |j| (*i, j))
                 })
-                .filter(|(i, j)| i < j)
                 .filter_map(|(i, j)| {
                     let s1 = unsafe { &*self.shape[i].get() };
                     let s2 = unsafe { &*sbs.shape[j].get() };
@@ -228,6 +227,14 @@ impl Rigidbodies {
             let rb1 = unsafe { RigidbodyRefMut::new(*i, self) };
             let rb2 = unsafe { RigidbodyRefMut::new(*j, self) };
             resolve_rb_contact(rb1, rb2, *v1, *v2, *n);
+        }
+    }
+
+    pub(crate) fn resolve_sb_contacts(&mut self, sbs: &Staticbodies) {
+        for (i, v1, j, v2, n) in self.sb_contacts.iter() {
+            let rb = unsafe { RigidbodyRefMut::new(*i, self) };
+            let sb = unsafe { StaticbodyRef::new(*j, sbs) };
+            resolve_sb_contact(rb, sb, *v1, *v2, *n);
         }
     }
 
@@ -288,6 +295,39 @@ fn resolve_rb_contact(
         + rel_v_tangent_dir * friction_impulse_strength;
     rb1.apply_impulse(p1, impulse);
     rb2.apply_impulse(p2, -impulse);
+}
+
+fn resolve_sb_contact(
+    mut rb: RigidbodyRefMut,
+    _sb: StaticbodyRef,
+    p1: Vec3,
+    _p2: Vec3,
+    n: Vec3,
+) {
+    // TODO: if sb can have velocity use it here
+    let rel_v = rb.local_velocity(p1);
+    let rel_v_normal = n.dot(&rel_v);
+    if rel_v_normal > 0.0 {
+        // the bodies are separating
+        return;
+    }
+
+    let normal_impulse_strength =
+        -(BOUNCYNESS + 1.0) * rel_v_normal / rb.impulse_effectivness(p1, n);
+
+    let rel_v_tangent = rel_v - n * rel_v_normal;
+    let rel_v_tangent_dir = rel_v_tangent
+        .try_normalize(Float::EPSILON)
+        .unwrap_or_else(Vec3::x);
+
+    let friction_impulse_max_strength = -rel_v_tangent_dir.dot(&rel_v)
+        / rb.impulse_effectivness(p1, rel_v_tangent_dir);
+    let friction_impulse_strength =
+        friction_impulse_max_strength.min(FRICTION * normal_impulse_strength);
+    // TODO: add small separating force based on penetration depth
+    let impulse = n * (normal_impulse_strength)
+        + rel_v_tangent_dir * friction_impulse_strength;
+    rb.apply_impulse(p1, impulse);
 }
 
 impl gjk::Support for (&Shape, &Vec3, &Quat) {
