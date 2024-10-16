@@ -21,7 +21,7 @@ pub struct Leaf<T> {
     pub data: T,
 }
 
-const MAX_NODE_SIZE: usize = 6;
+const MAX_NODE_SIZE: usize = 10;
 
 impl<T> RTree<T> {
     pub fn new(mut leaves: Vec<Leaf<T>>) -> Self {

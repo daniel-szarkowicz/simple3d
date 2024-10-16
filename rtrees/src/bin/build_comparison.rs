@@ -47,7 +47,7 @@ impl AppState for State {
         let height = self.omt.height().max(self.rtree.height());
         let t = self.start.elapsed().as_secs_f32() / 5.0;
         let max_height = t as usize % height;
-        let angle = t.to_radians() / 2.0 * 360.0;
+        let angle = t.to_radians() / 2.0 * 180.0;
         let colors = [
             [1.0, 0.0, 0.0],
             [0.75, 0.25, 0.0],

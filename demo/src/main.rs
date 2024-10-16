@@ -2,8 +2,8 @@ use graphics::app::{App, AppState};
 use graphics::canvas::Canvas;
 use graphics::geometry::*;
 use graphics::math::Transform;
-use nalgebra::{Translation, UnitQuaternion, Vector3};
-use physics::{RigidbodyId, Shape, World};
+use nalgebra::{Translation, Vector3};
+use physics::{Shape, World};
 
 fn main() {
     App::run_with(State::new());
@@ -11,7 +11,6 @@ fn main() {
 
 struct State {
     world: World,
-    test_body: RigidbodyId,
 }
 
 impl State {
@@ -19,43 +18,28 @@ impl State {
         let mut world = World::new();
         world
             .add_staticbody(Shape::Box {
-                width: 100.0,
-                height: 10.0,
-                depth: 100.0,
+                width: 1000.0,
+                height: 9.0,
+                depth: 1000.0,
             })
-            .position(Vector3::new(0.0, -15.0, 0.0))
+            .position(Vector3::new(0.0, -5.0, 0.0))
             .finish();
-        let test_body = world
+        // for i in 1..5 {
+        //     world
+        //         .add_rigidbody(Shape::Sphere { diameter: 1.0 })
+        //         .position(Vector3::new(0.01 * i as f64, 5.0 * i as f64, 0.0))
+        //         .finish();
+        // }
+        world
             .add_rigidbody(Shape::Box {
-                width: 0.5,
-                height: 0.5,
-                depth: 0.5,
+                width: 1.0,
+                height: 1.0,
+                depth: 1.0,
             })
-            .position(Vector3::new(0.0, 10.0, 0.0))
+            .mass(100.0)
+            .position(Vector3::new(0.0, 5.0, 0.0))
             .finish();
-        for x in -0..=0 {
-            for y in -3..=3 {
-                for z in -0..=0 {
-                    let xyz = Vector3::new(x as f64, y as f64, z as f64);
-                    world
-                        // .add_rigidbody(Shape::Sphere { diameter: 0.5 })
-                        .add_rigidbody(Shape::Box {
-                            width: 0.5,
-                            height: 0.5,
-                            depth: 0.5,
-                        })
-                        .position(xyz)
-                        .rotation(UnitQuaternion::new(xyz))
-                        .finish();
-                }
-            }
-        }
-        let mut body = world.get_mut(test_body).unwrap();
-        body.apply_impulse(
-            Vector3::new(0.1, 10.0, 0.1),
-            Vector3::new(0.0, -0.5, 0.0),
-        );
-        Self { world, test_body }
+        Self { world }
     }
 }
 
@@ -69,24 +53,22 @@ impl AppState for State {
             let transform = Translation::from(*rb.position()).to_homogeneous()
                 * rb.rotation().to_rotation_matrix().to_homogeneous();
             let drawing = match rb.shape() {
-                Shape::Sphere { diameter } => {
-                    canvas.draw(EllipsoidLines).scale(
-                        *diameter as f32,
-                        *diameter as f32,
-                        *diameter as f32,
-                    )
-                }
+                Shape::Sphere { diameter } => canvas.draw(Ellipsoid).scale(
+                    *diameter as f32,
+                    *diameter as f32,
+                    *diameter as f32,
+                ),
                 Shape::Box {
                     width,
                     height,
                     depth,
-                } => canvas.draw(BoxLines).scale(
+                } => canvas.draw(Box).scale(
                     *width as f32,
                     *height as f32,
                     *depth as f32,
                 ),
             };
-            drawing.transform(&transform.cast());
+            drawing.transform(&transform.cast()).color([0.0, 1.0, 0.0]);
         }
         for sb in self.world.staticbodies() {
             let transform = Translation::from(*sb.position()).to_homogeneous()

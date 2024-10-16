@@ -4,7 +4,7 @@
 use crate::omt::AABB;
 use std::fmt::Debug;
 
-const NODE_MAX_CHILDREN: usize = 6;
+const NODE_MAX_CHILDREN: usize = 10;
 
 pub struct RTree<T> {
     height: usize,

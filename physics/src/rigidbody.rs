@@ -7,8 +7,9 @@ use crate::{
 };
 
 const DEFAULT_DENSITY: Float = 1.0;
-const BOUNCYNESS: Float = 0.75;
+const BOUNCYNESS: Float = 0.0;
 const FRICTION: Float = 0.5;
+const SEPARATION_FORCE: Float = 1.0;
 
 pub struct RigidbodyBuilder<'w> {
     world: &'w mut World,
@@ -69,6 +70,8 @@ pub(crate) struct Rigidbodies {
     rotation: Vec<UnsafeCell<Quat>>,
     momentum: Vec<UnsafeCell<Vec3>>,
     angular_momentum: Vec<UnsafeCell<Vec3>>,
+    force: Vec<UnsafeCell<Vec3>>,
+    torque: Vec<UnsafeCell<Vec3>>,
 }
 
 impl Rigidbodies {
@@ -83,6 +86,8 @@ impl Rigidbodies {
         let inv_inertia = shape.inverse_inertia(mass);
         let momentum = Vec3::zeros();
         let angular_momentum = Vec3::zeros();
+        let force = Vec3::zeros();
+        let torque = Vec3::zeros();
 
         let id = self.id_counter;
         self.id_counter += 1;
@@ -95,6 +100,8 @@ impl Rigidbodies {
         self.momentum.push(UnsafeCell::new(momentum));
         self.angular_momentum
             .push(UnsafeCell::new(angular_momentum));
+        self.force.push(UnsafeCell::new(force));
+        self.torque.push(UnsafeCell::new(torque));
         RigidbodyId(id)
     }
 
@@ -126,6 +133,8 @@ impl Rigidbodies {
         self.rotation.remove(index);
         self.momentum.remove(index);
         self.angular_momentum.remove(index);
+        self.force.remove(index);
+        self.torque.remove(index);
     }
 
     // TODO: properly update the tree instead of creating a new one
@@ -145,14 +154,21 @@ impl Rigidbodies {
 
     pub(crate) fn update_bodies(&mut self, delta: Float) {
         for i in 0..self.id.len() {
+            *self.momentum[i].get_mut() += delta * *self.force[i].get_mut();
+            self.force[i].get_mut().fill(0.0);
             *self.position[i].get_mut() += delta
                 * *self.inv_mass[i].get_mut()
                 * *self.momentum[i].get_mut();
+
             let rotation_matrix =
                 self.rotation[i].get_mut().to_rotation_matrix();
             let inverse_inertia = rotation_matrix
                 * *self.inv_inertia[i].get_mut()
                 * rotation_matrix.inverse();
+
+            *self.angular_momentum[i].get_mut() +=
+                delta * *self.torque[i].get_mut();
+            self.torque[i].get_mut().fill(0.0);
             *self.rotation[i].get_mut() *= Quat::new(
                 delta * inverse_inertia * *self.angular_momentum[i].get_mut(),
             );
@@ -270,8 +286,22 @@ fn resolve_rb_contact(
     p2: Vec3,
     n: Vec3,
 ) {
+    let rel_a = rb1.local_acceleration(p1) - rb2.local_acceleration(p2);
+    let rel_a_normal = n.dot(&rel_a);
+    if rel_a_normal < 0.0 {
+        let normal_force_strength = rel_a_normal
+            / (rb1.impulse_effectivness(p1, n)
+                + rb2.impulse_effectivness(p2, n));
+        let force = n * normal_force_strength;
+        rb1.apply_force(p1, -force);
+        rb2.apply_force(p2, force);
+        // TODO friction
+    }
     let rel_v = rb1.local_velocity(p1) - rb2.local_velocity(p2);
     let rel_v_normal = n.dot(&rel_v);
+    // HACK: force objects to separete
+    rb1.apply_impulse(p1, n * 0.0001);
+    rb2.apply_impulse(p2, -n * 0.0001);
     if rel_v_normal > 0.0 {
         // the bodies are separating
         return;
@@ -304,6 +334,16 @@ fn resolve_sb_contact(
     _p2: Vec3,
     n: Vec3,
 ) {
+    let rel_a = rb.local_acceleration(p1);
+    let rel_a_normal = n.dot(&rel_a);
+    if rel_a_normal < 0.0 {
+        let normal_force_strength =
+            rel_a_normal / rb.impulse_effectivness(p1, n);
+        // println!("{normal_force_strength}");
+        let force = n * normal_force_strength;
+        rb.apply_central_force(-force);
+        // TODO friction
+    }
     // TODO: if sb can have velocity use it here
     let rel_v = rb.local_velocity(p1);
     let rel_v_normal = n.dot(&rel_v);
@@ -356,7 +396,7 @@ impl gjk::Support for (&Shape, &Vec3, &Quat) {
                 width: _,
                 height: _,
                 depth: _,
-            } => 0.0,
+            } => 0.01,
         }
     }
 
@@ -462,10 +502,37 @@ impl<'rbs> RigidbodyRef<'rbs> {
         unsafe { &*cell.get() }
     }
 
+    pub fn force(&self) -> &Vec3 {
+        // SAFETY: Caller guaranteed, that the index is in bounds.
+        let cell = unsafe { self.rigidbodies.force.get_unchecked(self.index) };
+        // SAFETY: Caller guaranteed, that there are no mutable references.
+        unsafe { &*cell.get() }
+    }
+
+    pub fn torque(&self) -> &Vec3 {
+        // SAFETY: Caller guaranteed, that the index is in bounds.
+        let cell = unsafe { self.rigidbodies.torque.get_unchecked(self.index) };
+        // SAFETY: Caller guaranteed, that there are no mutable references.
+        unsafe { &*cell.get() }
+    }
+
     pub fn local_velocity(&self, position: Vec3) -> Vec3 {
         self.momentum() * *self.inv_mass()
             + (self.inverse_inertia() * self.angular_momentum())
                 .cross(&(position - self.position()))
+    }
+
+    pub fn local_force(&self, position: Vec3) -> Vec3 {
+        let r = (position - self.position()).magnitude();
+        if r > f64::EPSILON {
+            self.force() + self.torque() / r
+        } else {
+            *self.force()
+        }
+    }
+
+    pub fn local_acceleration(&self, position: Vec3) -> Vec3 {
+        self.local_force(position) * *self.inv_mass()
     }
 
     pub fn impulse_effectivness(
@@ -501,21 +568,45 @@ impl<'rbs> RigidbodyRefMut<'rbs> {
         }
     }
 
-    pub fn apply_impulse(&mut self, attack_point: Vec3, impulse: Vec3) {
+    pub fn apply_central_impulse(&mut self, impulse: Vec3) {
         // SAFETY: Caller guaranteed, that the index is in bounds.
         let momentum_cell =
             unsafe { self.rigidbodies.momentum.get_unchecked(self.index) };
         // SAFETY: Caller guaranteed, that there are no mutable references.
         let momentum = unsafe { &mut *momentum_cell.get() };
+        *momentum += impulse;
+    }
+
+    pub fn apply_impulse(&mut self, attack_point: Vec3, impulse: Vec3) {
+        self.apply_central_impulse(impulse);
         // SAFETY: Caller guaranteed, that the index is in bounds.
         let angular_momentum_cell = unsafe {
             self.rigidbodies.angular_momentum.get_unchecked(self.index)
         };
         // SAFETY: Caller guaranteed, that there are no mutable references.
         let angular_momentum = unsafe { &mut *angular_momentum_cell.get() };
-        *momentum += impulse;
         let offset = attack_point - *self.position();
         *angular_momentum += offset.cross(&impulse);
+    }
+
+    pub fn apply_central_force(&mut self, force: Vec3) {
+        // SAFETY: Caller guaranteed, that the index is in bounds.
+        let force_cell =
+            unsafe { self.rigidbodies.force.get_unchecked(self.index) };
+        // SAFETY: Caller guaranteed, that there are no mutable references.
+        let force_mut = unsafe { &mut *force_cell.get() };
+        *force_mut += force;
+    }
+
+    pub fn apply_force(&mut self, attack_point: Vec3, force: Vec3) {
+        self.apply_central_force(force);
+        // SAFETY: Caller guaranteed, that the index is in bounds.
+        let torque_cell =
+            unsafe { self.rigidbodies.torque.get_unchecked(self.index) };
+        // SAFETY: Caller guaranteed, that there are no mutable references.
+        let torque = unsafe { &mut *torque_cell.get() };
+        let offset = attack_point - *self.position();
+        *torque += offset.cross(&force);
     }
 }
 

@@ -395,8 +395,8 @@ fn closest_point_to_contact(
         let normal = closest_point.diff;
         let b_point = closest_point.a - closest_point.diff;
         Some((
-            closest_point.a - normal * a.radius() / (a.radius() + b.radius()),
-            b_point + normal * b.radius() / (a.radius() + b.radius()),
+            closest_point.a - normal * a.radius(),
+            b_point + normal * b.radius(),
             normal.normalize(),
         ))
     } else {
