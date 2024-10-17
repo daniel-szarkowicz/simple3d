@@ -392,7 +392,7 @@ fn closest_point_to_contact(
     closest_point: &SupportPoint,
 ) -> Option<(Vec3, Vec3, Vec3)> {
     if closest_point.diff.magnitude() <= a.radius() + b.radius() {
-        let normal = closest_point.diff;
+        let normal = closest_point.diff.normalize();
         let b_point = closest_point.a - closest_point.diff;
         Some((
             closest_point.a - normal * a.radius(),
