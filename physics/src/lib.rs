@@ -83,7 +83,11 @@ pub(crate) fn aabb(shape: &Shape, position: &Vec3, rotation: &Quat) -> AABB {
                     for z in [-0.5, 0.5] {
                         let p = position
                             + rotation
-                                * Vec3::new(x * width, y * height, z * depth);
+                                * Vec3::new(
+                                    x * (width + 0.01),
+                                    y * (height + 0.01),
+                                    z * (depth + 0.01),
+                                );
                         min = min.inf(&p);
                         max = max.sup(&p);
                     }
