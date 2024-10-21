@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::{collections::HashSet, f32::consts::PI};
 
 use crate::mesh::{Dynamic, Mesh, MeshProvider, PDVertex, PNVertex, Static};
 
@@ -9,10 +9,19 @@ pub struct Box;
 pub struct Ellipsoid;
 
 #[derive(Clone, Copy)]
+pub struct HalfSphere;
+
+#[derive(Clone, Copy)]
+pub struct CylinderSide;
+
+#[derive(Clone, Copy)]
 pub struct BoxLines;
 
 #[derive(Clone, Copy)]
 pub struct EllipsoidLines;
+
+// #[derive(Clone, Copy)]
+// pub struct Capsule(pub f32, pub f32);
 
 impl MeshProvider for Box {
     type Vertex = PNVertex;
@@ -81,6 +90,79 @@ impl MeshProvider for Ellipsoid {
             .into_iter()
             .flat_map(|f| f.map(|i| i as u32))
             .collect();
+        Mesh { vertices, indices }
+    }
+}
+
+impl MeshProvider for HalfSphere {
+    type Vertex = PNVertex;
+
+    type Kind = Static;
+
+    fn create_mesh(self) -> Mesh<Self::Vertex> {
+        let resolution = 10u32;
+        let lat = resolution * 2;
+        let lon = resolution;
+        let half_lon = lon / 2;
+        let mut vertices = Vec::with_capacity((lat * half_lon + 1) as usize);
+        for b in 0..half_lon + 1 {
+            for a in 0..lat {
+                let alpha = (a as f32) * PI * 2.0 / (lat as f32);
+                let beta = (b as f32) * PI / (lon - 1) as f32 - PI / 2.0;
+                let y = beta.sin();
+                let x = beta.cos() * alpha.sin();
+                let z = beta.cos() * alpha.cos();
+                vertices.push(PNVertex {
+                    position: [x / 2.0, y / 2.0, z / 2.0],
+                    normal: [x, y, z],
+                });
+            }
+        }
+        let mut indices = Vec::with_capacity((lat * half_lon) as usize * 6);
+        for b in 0..half_lon {
+            for a in 0..lat {
+                let i0 = a + b * lat;
+                let i1 = (a + 1) % lat + b * lat;
+                let i2 = i0 + lat;
+                let i3 = i1 + lat;
+                indices.extend_from_slice(&[i0, i1, i2, i2, i1, i3]);
+            }
+        }
+        Mesh { vertices, indices }
+    }
+}
+
+impl MeshProvider for CylinderSide {
+    type Vertex = PNVertex;
+
+    type Kind = Static;
+
+    fn create_mesh(self) -> Mesh<Self::Vertex> {
+        let resolution = 10u32;
+        let lat = resolution * 2;
+        // let lon = resolution;
+        let mut vertices = Vec::with_capacity(lat as usize);
+        for a in 0..lat {
+            let alpha = (a as f32) * PI * 2.0 / (lat as f32);
+            let x = alpha.sin();
+            let z = alpha.cos();
+            vertices.push(PNVertex {
+                position: [x / 2.0, 0.5, z / 2.0],
+                normal: [x, 0.0, z],
+            });
+            vertices.push(PNVertex {
+                position: [x / 2.0, -0.5, z / 2.0],
+                normal: [x, 0.0, z],
+            });
+        }
+        let mut indices = Vec::with_capacity(lat as usize * 6);
+        for a in 0..lat {
+            let i0 = a * 2;
+            let i1 = ((a + 1) % lat) * 2;
+            let i2 = i0 + 1;
+            let i3 = i1 + 1;
+            indices.extend_from_slice(&[i0, i1, i2, i2, i1, i3]);
+        }
         Mesh { vertices, indices }
     }
 }
@@ -408,3 +490,21 @@ fn low_poly_triangles(mesh: Mesh<PNVertex>) -> Mesh<PNVertex> {
     }
     Mesh { vertices, indices }
 }
+
+// impl Drawable for Capsule {
+//     type Drawing<'c, 'cref> = Group<'c, 'cref, fn(&mut Canvas)>
+//     where
+//         'c: 'cref;
+
+//     fn draw<'c, 'cref>(
+//         self,
+//         canvas: &'cref mut crate::canvas::Canvas<'c>,
+//     ) -> Group<'c, 'cref, fn(&mut Canvas)> {
+//         let Capsule(width, height) = self;
+//         canvas.group(|canvas| {
+//             canvas.draw(HalfSphere).translate_y(0.5).rotate_x(PI);
+//             canvas.draw(CylinderSide);
+//             canvas.draw(HalfSphere).translate_y(0.5);
+//         })
+//     }
+// }
