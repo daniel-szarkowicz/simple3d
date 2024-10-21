@@ -10,8 +10,9 @@ pub struct World {
     pub(crate) rigidbodies: Rigidbodies,
 }
 
-// const GRAVITY: Vec3 = Vec3::new(0.0, -10.0, 0.0);
-const GRAVITY: Vec3 = Vec3::new(0.0, 0.0, 0.0);
+const GRAVITY: Vec3 = Vec3::new(0.0, -1.0, 0.0);
+// const GRAVITY: Vec3 = Vec3::new(0.0, 0.0, 0.0);
+const SOLVER_STEPS: usize = 10;
 
 impl World {
     pub fn new() -> Self {
@@ -60,13 +61,16 @@ impl World {
     pub fn update(&mut self, delta: Float) {
         self.rigidbodies.update_bodies(delta);
         for mut rb in self.rigidbodies_mut() {
-            rb.apply_central_force(GRAVITY * rb.mass());
+            if *rb.inv_mass() != 0.0 {
+                // rb.apply_central_force(GRAVITY * rb.mass());
+                rb.apply_central_impulse(GRAVITY * rb.mass() * delta);
+            }
         }
         self.staticbodies.update_rtree();
         self.rigidbodies.update_rtree();
         self.rigidbodies.update_rb_contacts();
         self.rigidbodies.update_sb_contacts(&self.staticbodies);
-        for _ in 0..20 {
+        for _ in 0..SOLVER_STEPS {
             self.rigidbodies.resolve_rb_contacts();
             self.rigidbodies.resolve_sb_contacts(&self.staticbodies);
         }
