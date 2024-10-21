@@ -33,7 +33,110 @@ impl SupportPoint {
     }
 }
 
-pub fn gjk(a: &impl Support, b: &impl Support) -> Option<(Vec3, Vec3, Vec3)> {
+// currently gjk always returns a single point
+// to simulate resting contact we need more points
+// we first have to know all types of contact that can happen
+// gjk uses simplexes for calculations different simplexes can represent
+// different contact types:
+// 1-simplex: this represents a single point, like two spheres colliding
+// 2-simplex: this either represents two parallel edges, or an edge and a point
+//            if it's two edges, then the support points are different
+//            if it's an edge and a point, then one of the support points is the same
+//              in this case only one contact should be returned (closest point)
+// 3-simplex: case vertex-face: return closest
+//            case edge-edge (not parallel): return closest
+//            case edge-face: return the single edge point and the closest to the double edge point
+//            case face-face: return all three
+fn handle_return(
+    a: &impl Support,
+    b: &impl Support,
+    s: &SimplexData,
+    p: &SupportPoint,
+) -> Vec<(Vec3, Vec3, Vec3)> {
+    closest_point_to_contact(a, b, p).into_iter().collect()
+    // match s.len() {
+    //     1 => closest_point_to_contact(a, b, p).into_iter().collect(),
+    //     2 => handle_return_2(a, b, &s[0], &s[1], p),
+    //     3 => handle_return_3(a, b, &s[0], &s[1], &s[2], p),
+    //     _ => unreachable!(),
+    // }
+}
+
+fn handle_return_2(
+    a: &impl Support,
+    b: &impl Support,
+    s1: &SupportPoint,
+    s2: &SupportPoint,
+    p: &SupportPoint,
+) -> Vec<(Vec3, Vec3, Vec3)> {
+    if (s1.a - s2.a).magnitude_squared() < TOLERANCE {
+        // the point from `a` is the same, this is a vertex-edge collision
+        return closest_point_to_contact(a, b, p).into_iter().collect();
+    }
+    let s1_b = s1.a - s1.diff;
+    let s2_b = s2.a - s2.diff;
+    if (s1_b - s2_b).magnitude_squared() < TOLERANCE {
+        // the point from `b` is the same, this is a vertex-edge collision
+        return closest_point_to_contact(a, b, p).into_iter().collect();
+    }
+    // we are in an edge-edge collision
+    println!("TODO: edge-edge collision");
+    closest_point_to_contact(a, b, p).into_iter().collect()
+}
+
+fn handle_return_3(
+    a: &impl Support,
+    b: &impl Support,
+    s1: &SupportPoint,
+    s2: &SupportPoint,
+    s3: &SupportPoint,
+    p: &SupportPoint,
+) -> Vec<(Vec3, Vec3, Vec3)> {
+    let s12_a = (s1.a - s2.a).magnitude_squared() < TOLERANCE;
+    let s13_a = (s1.a - s3.a).magnitude_squared() < TOLERANCE;
+    let s23_a = (s2.a - s3.a).magnitude_squared() < TOLERANCE;
+    if s12_a && s13_a && s23_a {
+        // the point from `a` is the same, this is a vertex-face collision
+        return closest_point_to_contact(a, b, p).into_iter().collect();
+    }
+    debug_assert!(!(s12_a && s13_a));
+    debug_assert!(!(s13_a && s23_a));
+    debug_assert!(!(s12_a && s23_a));
+    if s12_a || s13_a || s23_a {
+        // two points from `a` are the same, this is an edge-? collision
+        println!("TODO: handle a edge-? collision");
+        return closest_point_to_contact(a, b, p).into_iter().collect();
+    }
+    let s1_b = s1.a - s1.diff;
+    let s2_b = s2.a - s2.diff;
+    let s3_b = s3.a - s3.diff;
+    let s12_b = (s1_b - s2_b).magnitude_squared() < TOLERANCE;
+    let s13_b = (s1_b - s3_b).magnitude_squared() < TOLERANCE;
+    let s23_b = (s2_b - s3_b).magnitude_squared() < TOLERANCE;
+    if s12_b && s13_b && s23_b {
+        // the point from `b` is the same, this is a vertex-face collision
+        return closest_point_to_contact(a, b, p).into_iter().collect();
+    }
+    debug_assert!(!(s12_b && s13_b));
+    debug_assert!(!(s13_b && s23_b));
+    debug_assert!(!(s12_b && s23_b));
+    if s12_b || s13_b || s23_b {
+        // two points from `b` are the same, this is an edge-? collision
+        println!("todo: handle b edge-? collision");
+        return closest_point_to_contact(a, b, p).into_iter().collect();
+    }
+    println!("todo: handle face-face collision");
+    closest_point_to_contact(a, b, p).into_iter().collect()
+    // let result: Vec<_> = closest_point_to_contact(a, b, s1)
+    //     .into_iter()
+    //     .chain(closest_point_to_contact(a, b, s2))
+    //     .chain(closest_point_to_contact(a, b, s3))
+    //     .collect();
+    // println!("handle-3: {}", result.len());
+    // result
+}
+
+pub fn gjk(a: &impl Support, b: &impl Support) -> Vec<(Vec3, Vec3, Vec3)> {
     let mut s = SimplexData::with_capacity(4);
     s.push(SupportPoint::new(a, b, &(a.base() - b.base())));
     let mut prev_dist = f64::INFINITY;
@@ -45,6 +148,7 @@ pub fn gjk(a: &impl Support, b: &impl Support) -> Option<(Vec3, Vec3, Vec3)> {
         // dbg!(closest_point.diff);
         if s.len() == SIMPLEX_MAX_DIM {
             // return epa(a, b, s.into_vec());
+            // println!("going epa");
             return epa(a, b, s);
         }
         debug_assert!(
@@ -53,7 +157,8 @@ pub fn gjk(a: &impl Support, b: &impl Support) -> Option<(Vec3, Vec3, Vec3)> {
         );
         dist_diff = prev_dist - dist;
         if prev_dist - dist <= TOLERANCE {
-            return closest_point_to_contact(a, b, &closest_point);
+            // println!("1: {}", s.len());
+            return handle_return(a, b, &s, &closest_point);
         }
         prev_dist = dist;
         let new_point = SupportPoint::new(a, b, &-closest_point.diff);
@@ -62,7 +167,8 @@ pub fn gjk(a: &impl Support, b: &impl Support) -> Option<(Vec3, Vec3, Vec3)> {
             .dot(&(new_point.diff - closest_point.diff))
             >= -TOLERANCE
         {
-            return closest_point_to_contact(a, b, &closest_point);
+            // println!("2: {}", s.len());
+            return handle_return(a, b, &s, &closest_point);
         }
         s.push(new_point);
         closest_point = closest_simplex(&mut s);
@@ -71,7 +177,8 @@ pub fn gjk(a: &impl Support, b: &impl Support) -> Option<(Vec3, Vec3, Vec3)> {
         "gjk didn't converge in {GJK_MAX_ITER} steps \
         (dist = {prev_dist:0.10}, diff = {dist_diff:0.10})"
     );
-    closest_point_to_contact(a, b, &closest_point)
+    // println!("3: {}", s.len());
+    handle_return(a, b, &s, &closest_point)
 }
 
 #[allow(clippy::similar_names)]
@@ -467,7 +574,7 @@ pub fn epa(
     a: &impl Support,
     b: &impl Support,
     mut points: Vec<SupportPoint>,
-) -> Option<(Vec3, Vec3, Vec3)> {
+) -> Vec<(Vec3, Vec3, Vec3)> {
     debug_assert_eq!(points.len(), 4);
     let mut faces = vec![[0, 1, 2], [0, 2, 3], [0, 3, 1], [1, 2, 3]];
     let mut closest_points = vec![];
@@ -491,7 +598,7 @@ pub fn epa(
             .map(|(i, _)| i)
         else {
             eprintln!("math has failed!");
-            return None;
+            return vec![];
         };
         let new_point = SupportPoint::new(a, b, &closest_points[minface].diff);
         debug_assert!(
@@ -506,13 +613,21 @@ pub fn epa(
             if iter == EPA_MAX_ITER {
                 eprintln!("epa max reached");
             }
+            // return handle_return_3(
+            //     a,
+            //     b,
+            //     &points[faces[minface][0]],
+            //     &points[faces[minface][0]],
+            //     &points[faces[minface][0]],
+            //     &closest_points[minface],
+            // );
             let b_point =
                 closest_points[minface].a - closest_points[minface].diff;
-            return Some((
+            return vec![(
                 closest_points[minface].a,
                 b_point,
                 -closest_points[minface].diff.normalize(),
-            ));
+            )];
         }
         let mut edges = vec![];
         let mut i = 0;

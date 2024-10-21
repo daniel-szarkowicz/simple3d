@@ -1,5 +1,7 @@
 use std::{cell::UnsafeCell, marker::PhantomData, ops::Deref};
 
+use nalgebra::{Dyn, OMatrix, OVector};
+
 use crate::{
     gjk::{self},
     rtree::{Leaf, QueryItem, RTree, AABBS},
@@ -7,9 +9,10 @@ use crate::{
 };
 
 const DEFAULT_DENSITY: Float = 1.0;
-const BOUNCYNESS: Float = 0.0;
+const BOUNCYNESS: Float = 0.5;
 const FRICTION: Float = 0.5;
-const SEPARATION_FORCE: Float = 1.0;
+const RB_SEPARATION_FORCE: Float = 0.1;
+const SB_SEPARATION_FORCE: Float = RB_SEPARATION_FORCE * 2.0;
 
 pub struct RigidbodyBuilder<'w> {
     world: &'w mut World,
@@ -65,6 +68,7 @@ pub(crate) struct Rigidbodies {
     id: Vec<usize>,
     shape: Vec<UnsafeCell<Shape>>,
     inv_mass: Vec<UnsafeCell<Float>>,
+    inv_body_inertia: Vec<UnsafeCell<Mat3>>,
     inv_inertia: Vec<UnsafeCell<Mat3>>,
     position: Vec<UnsafeCell<Vec3>>,
     rotation: Vec<UnsafeCell<Quat>>,
@@ -83,7 +87,10 @@ impl Rigidbodies {
         rotation: Quat,
     ) -> RigidbodyId {
         let inv_mass = mass.recip();
-        let inv_inertia = shape.inverse_inertia(mass);
+        let inv_body_inertia = shape.inverse_inertia(mass);
+        let rotation_matrix = rotation.to_rotation_matrix();
+        let inv_inertia =
+            rotation_matrix * inv_body_inertia * rotation_matrix.inverse();
         let momentum = Vec3::zeros();
         let angular_momentum = Vec3::zeros();
         let force = Vec3::zeros();
@@ -94,6 +101,8 @@ impl Rigidbodies {
         self.id.push(id);
         self.shape.push(UnsafeCell::new(shape));
         self.inv_mass.push(UnsafeCell::new(inv_mass));
+        self.inv_body_inertia
+            .push(UnsafeCell::new(inv_body_inertia));
         self.inv_inertia.push(UnsafeCell::new(inv_inertia));
         self.position.push(UnsafeCell::new(position));
         self.rotation.push(UnsafeCell::new(rotation));
@@ -128,6 +137,7 @@ impl Rigidbodies {
         self.id.remove(index);
         self.shape.remove(index);
         self.inv_mass.remove(index);
+        self.inv_body_inertia.remove(index);
         self.inv_inertia.remove(index);
         self.position.remove(index);
         self.rotation.remove(index);
@@ -160,18 +170,20 @@ impl Rigidbodies {
                 * *self.inv_mass[i].get_mut()
                 * *self.momentum[i].get_mut();
 
-            let rotation_matrix =
-                self.rotation[i].get_mut().to_rotation_matrix();
-            let inverse_inertia = rotation_matrix
-                * *self.inv_inertia[i].get_mut()
-                * rotation_matrix.inverse();
-
             *self.angular_momentum[i].get_mut() +=
                 delta * *self.torque[i].get_mut();
             self.torque[i].get_mut().fill(0.0);
             *self.rotation[i].get_mut() *= Quat::new(
-                delta * inverse_inertia * *self.angular_momentum[i].get_mut(),
+                delta
+                    * *self.inv_inertia[i].get_mut()
+                    * *self.angular_momentum[i].get_mut(),
             );
+
+            let rotation_matrix =
+                self.rotation[i].get_mut().to_rotation_matrix();
+            *self.inv_inertia[i].get_mut() = rotation_matrix
+                * *self.inv_body_inertia[i].get_mut()
+                * rotation_matrix.inverse();
         }
     }
 
@@ -192,7 +204,7 @@ impl Rigidbodies {
                         .map(move |j| (*i, j))
                 })
                 .filter(|(i, j)| i < j)
-                .filter_map(|(i, j)| {
+                .flat_map(|(i, j)| {
                     let s1 = unsafe { &*self.shape[i].get() };
                     let s2 = unsafe { &*self.shape[j].get() };
                     let p1 = unsafe { &*self.position[i].get() };
@@ -200,7 +212,8 @@ impl Rigidbodies {
                     let r1 = unsafe { &*self.rotation[i].get() };
                     let r2 = unsafe { &*self.rotation[j].get() };
                     check_contact(s1, p1, r1, s2, p2, r2)
-                        .map(|(v1, v2, n)| (i, v1, j, v2, n))
+                        .into_iter()
+                        .map(move |(v1, v2, n)| (i, v1, j, v2, n))
                 }),
         );
     }
@@ -221,7 +234,7 @@ impl Rigidbodies {
                         })
                         .map(move |j| (*i, j))
                 })
-                .filter_map(|(i, j)| {
+                .flat_map(|(i, j)| {
                     let s1 = unsafe { &*self.shape[i].get() };
                     let s2 = unsafe { &*sbs.shape[j].get() };
                     let p1 = unsafe { &*self.position[i].get() };
@@ -229,7 +242,8 @@ impl Rigidbodies {
                     let r1 = unsafe { &*self.rotation[i].get() };
                     let r2 = unsafe { &*sbs.rotation[j].get() };
                     check_contact(s1, p1, r1, s2, p2, r2)
-                        .map(|(v1, v2, n)| (i, v1, j, v2, n))
+                        .into_iter()
+                        .map(move |(v1, v2, n)| (i, v1, j, v2, n))
                 }),
         );
     }
@@ -244,6 +258,81 @@ impl Rigidbodies {
             let rb2 = unsafe { RigidbodyRefMut::new(*j, self) };
             resolve_rb_contact(rb1, rb2, *v1, *v2, *n);
         }
+        // let a_matrix = self.compute_a_matrix();
+        // let b_vector = self.compute_b_vector();
+
+        // // TODO: use a real solver
+        // let a_inverse = a_matrix.try_inverse().unwrap();
+        // let f_vector = a_inverse * -b_vector;
+
+        // for ((i, p1, j, p2, n), &f) in
+        //     self.rb_contacts.iter().zip(f_vector.into_iter())
+        // {
+        //     // TODO: use a real solver
+        //     if f > 0.0 {
+        //         let mut rb1 = unsafe { RigidbodyRefMut::new(*i, self) };
+        //         let mut rb2 = unsafe { RigidbodyRefMut::new(*j, self) };
+        //         rb1.apply_force(*p1, n * f);
+        //         rb2.apply_force(*p2, -n * f);
+        //     }
+        // }
+    }
+
+    fn compute_a_matrix(&self) -> OMatrix<f64, Dyn, Dyn> {
+        let mut matrix = OMatrix::<f64, Dyn, Dyn>::zeros(
+            self.rb_contacts.len(),
+            self.rb_contacts.len(),
+        );
+        // for c1 in &self.rb_contacts {
+        //     for c2 in &self.rb_contacts {
+        //         if c1.0 != c2.0 && c1.2 != c2.2 && c1.0 != c2.2 && c1.2 != c2.0
+        //         {
+        //             continue;
+        //         }
+        //         let mut rb1 = unsafe { RigidbodyRefMut::new(*i, self) };
+        //         let mut rb2 = unsafe { RigidbodyRefMut::new(*j, self) };
+        //     }
+        // }
+        for (ci, (i, p1, j, p2, n)) in self.rb_contacts.iter().enumerate() {
+            let rb1 = unsafe { RigidbodyRef::new(*i, self) };
+            let rb2 = unsafe { RigidbodyRef::new(*j, self) };
+            let force_on_a = n;
+            let force_on_b = -n;
+            let torque_on_a = (p1 - rb1.position()).cross(n);
+            let torque_on_b = (p2 - rb2.position()).cross(n);
+
+            let a_linear = force_on_a * *rb1.inv_mass();
+            let a_angular = rb1.inverse_inertia() * torque_on_a;
+            let b_linear = force_on_b * *rb2.inv_mass();
+            let b_angular = rb2.inverse_inertia() * torque_on_b;
+
+            matrix[(ci, ci)] =
+                n.dot(&((a_linear + a_angular) - (b_linear + b_angular)));
+        }
+        matrix
+    }
+
+    fn compute_b_vector(&self) -> OVector<f64, Dyn> {
+        let mut vector = OVector::<f64, Dyn>::zeros(self.rb_contacts.len());
+        for (ci, (i, p1, j, p2, n)) in self.rb_contacts.iter().enumerate() {
+            let rb1 = unsafe { RigidbodyRef::new(*i, self) };
+            let rb2 = unsafe { RigidbodyRef::new(*j, self) };
+            let a_omega = rb1.inverse_inertia() * rb1.angular_momentum();
+            let b_omega = rb2.inverse_inertia() * rb2.angular_momentum();
+            let a_vel_part =
+                a_omega.cross(&(a_omega.cross(&(p1 - rb1.position()))));
+            let b_vel_part =
+                b_omega.cross(&(b_omega.cross(&(p2 - rb2.position()))));
+            let k1 = n.dot(
+                &((rb1.local_acceleration(*p1) + a_vel_part)
+                    - (rb2.local_acceleration(*p2) + b_vel_part)),
+            );
+            let k2 = 2.0
+                * n.dot(&(rb1.local_velocity(*p1) - rb2.local_velocity(*p2)));
+
+            vector[ci] = k1 + k2;
+        }
+        vector
     }
 
     pub(crate) fn resolve_sb_contacts(&mut self, sbs: &Staticbodies) {
@@ -275,7 +364,7 @@ fn check_contact(
     s2: &Shape,
     p2: &Vec3,
     r2: &Quat,
-) -> Option<(Vec3, Vec3, Vec3)> {
+) -> Vec<(Vec3, Vec3, Vec3)> {
     gjk::gjk(&(s1, p1, r1), &(s2, p2, r2))
 }
 
@@ -286,29 +375,20 @@ fn resolve_rb_contact(
     p2: Vec3,
     n: Vec3,
 ) {
-    let rel_a = rb1.local_acceleration(p1) - rb2.local_acceleration(p2);
-    let rel_a_normal = n.dot(&rel_a);
-    if rel_a_normal < 0.0 {
-        let normal_force_strength = rel_a_normal
-            / (rb1.impulse_effectivness(p1, n)
-                + rb2.impulse_effectivness(p2, n));
-        let force = n * normal_force_strength;
-        rb1.apply_force(p1, -force);
-        rb2.apply_force(p2, force);
-        // TODO friction
-    }
     let rel_v = rb1.local_velocity(p1) - rb2.local_velocity(p2);
     let rel_v_normal = n.dot(&rel_v);
     // HACK: force objects to separete
-    rb1.apply_impulse(p1, n * 0.0001);
-    rb2.apply_impulse(p2, -n * 0.0001);
-    if rel_v_normal > 0.0 {
+    let depth = n.dot(&(p2 - p1)).clamp(0.0, 1.0).sqrt();
+    // rb1.apply_impulse(p1, n * RB_SEPARATION_FORCE * depth);
+    // rb2.apply_impulse(p2, -n * RB_SEPARATION_FORCE * depth);
+    let normal_impulse_strength = if rel_v_normal > 0.0 {
         // the bodies are separating
-        return;
-    }
-
-    let normal_impulse_strength = -(BOUNCYNESS + 1.0) * rel_v_normal
-        / (rb1.impulse_effectivness(p1, n) + rb2.impulse_effectivness(p2, n));
+        RB_SEPARATION_FORCE * depth
+    } else {
+        -(BOUNCYNESS + 1.0) * rel_v_normal
+            / (rb1.impulse_effectivness(p1, n)
+                + rb2.impulse_effectivness(p2, n))
+    };
 
     let rel_v_tangent = rel_v - n * rel_v_normal;
     let rel_v_tangent_dir = rel_v_tangent
@@ -320,7 +400,6 @@ fn resolve_rb_contact(
             + rb2.impulse_effectivness(p2, rel_v_tangent_dir));
     let friction_impulse_strength =
         friction_impulse_max_strength.min(FRICTION * normal_impulse_strength);
-    // TODO: add small separating force based on penetration depth
     let impulse = n * (normal_impulse_strength)
         + rel_v_tangent_dir * friction_impulse_strength;
     rb1.apply_impulse(p1, impulse);
@@ -331,29 +410,34 @@ fn resolve_sb_contact(
     mut rb: RigidbodyRefMut,
     _sb: StaticbodyRef,
     p1: Vec3,
-    _p2: Vec3,
+    p2: Vec3,
     n: Vec3,
 ) {
-    let rel_a = rb.local_acceleration(p1);
-    let rel_a_normal = n.dot(&rel_a);
-    if rel_a_normal < 0.0 {
-        let normal_force_strength =
-            rel_a_normal / rb.impulse_effectivness(p1, n);
-        // println!("{normal_force_strength}");
-        let force = n * normal_force_strength;
-        rb.apply_central_force(-force);
-        // TODO friction
-    }
+    // let rel_a = rb.local_acceleration(p1);
+    // let rel_a_normal = n.dot(&rel_a);
+    // if rel_a_normal < 0.0 {
+    //     let normal_force_strength =
+    //         rel_a_normal / rb.impulse_effectivness(p1, n);
+    //     // println!("{normal_force_strength}");
+    //     let force = n * normal_force_strength;
+    //     rb.apply_central_force(-force);
+    //     // TODO friction
+    // }
     // TODO: if sb can have velocity use it here
     let rel_v = rb.local_velocity(p1);
+    let depth = n.dot(&(p2 - p1)).clamp(0.0, 1.0).sqrt();
+    // rb.apply_impulse(p1, n * SB_SEPARATION_FORCE * depth);
     let rel_v_normal = n.dot(&rel_v);
     if rel_v_normal > 0.0 {
         // the bodies are separating
         return;
     }
-
-    let normal_impulse_strength =
-        -(BOUNCYNESS + 1.0) * rel_v_normal / rb.impulse_effectivness(p1, n);
+    let normal_impulse_strength = if rel_v_normal > 0.0 {
+        // the bodies are separating
+        SB_SEPARATION_FORCE * depth
+    } else {
+        -(BOUNCYNESS + 1.0) * rel_v_normal / rb.impulse_effectivness(p1, n)
+    };
 
     let rel_v_tangent = rel_v - n * rel_v_normal;
     let rel_v_tangent_dir = rel_v_tangent
@@ -461,12 +545,10 @@ impl<'rbs> RigidbodyRef<'rbs> {
         self.inv_mass().recip()
     }
 
-    pub fn inverse_inertia(&self) -> Mat3 {
-        let rotation_matrix = self.rotation().to_rotation_matrix();
+    pub fn inverse_inertia(&self) -> &Mat3 {
         let cell =
             unsafe { self.rigidbodies.inv_inertia.get_unchecked(self.index) };
-        let inv_inertia = unsafe { &*cell.get() };
-        rotation_matrix * inv_inertia * rotation_matrix.inverse()
+        unsafe { &*cell.get() }
     }
 
     pub fn position(&self) -> &Vec3 {
@@ -522,17 +604,23 @@ impl<'rbs> RigidbodyRef<'rbs> {
                 .cross(&(position - self.position()))
     }
 
-    pub fn local_force(&self, position: Vec3) -> Vec3 {
-        let r = (position - self.position()).magnitude();
-        if r > f64::EPSILON {
-            self.force() + self.torque() / r
-        } else {
-            *self.force()
-        }
-    }
+    // pub fn local_force(&self, position: Vec3) -> Vec3 {
+    //     let r = (position - self.position()).magnitude();
+    //     if r > f64::EPSILON {
+    //         self.force() + self.torque() / r
+    //     } else {
+    //         *self.force()
+    //     }
+    // }
 
     pub fn local_acceleration(&self, position: Vec3) -> Vec3 {
-        self.local_force(position) * *self.inv_mass()
+        let r = position - self.position();
+        if r.magnitude() > f64::EPSILON {
+            self.force() * *self.inv_mass()
+                + (self.inverse_inertia() * self.torque()).cross(&r)
+        } else {
+            *self.force() * *self.inv_mass()
+        }
     }
 
     pub fn impulse_effectivness(
