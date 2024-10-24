@@ -13,10 +13,17 @@ const SIMPLEX_MAX_DIM: usize = 4;
 const EPA_MAX_ITER: usize = 10;
 const GJK_MAX_ITER: usize = 12;
 
+pub enum Feature {
+    Point(Vec3),
+    Segment(Vec3, Vec3),
+    Polygon { normal: Vec3, points: Box<[Vec3]> },
+}
+
 pub trait Support {
     fn support(&self, direction: &Vec3) -> Vec3;
     fn radius(&self) -> f64;
     fn base(&self) -> Vec3;
+    fn feature(&self, direction: &Vec3) -> Feature;
 }
 
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -52,8 +59,8 @@ fn handle_return(
     b: &impl Support,
     s: &SimplexData,
     p: &SupportPoint,
-) -> Vec<(Vec3, Vec3, Vec3)> {
-    closest_point_to_contact(a, b, p).into_iter().collect()
+) -> Option<(Vec3, Vec3, Vec3)> {
+    closest_point_to_contact(a, b, p)
     // match s.len() {
     //     1 => closest_point_to_contact(a, b, p).into_iter().collect(),
     //     2 => handle_return_2(a, b, &s[0], &s[1], p),
@@ -136,7 +143,14 @@ fn handle_return_3(
     // result
 }
 
-pub fn gjk(a: &impl Support, b: &impl Support) -> Vec<(Vec3, Vec3, Vec3)> {
+pub fn get_contacts(
+    a: &impl Support,
+    b: &impl Support,
+) -> Vec<(Vec3, Vec3, Vec3)> {
+    gjk(a, b).into_iter().collect()
+}
+
+pub fn gjk(a: &impl Support, b: &impl Support) -> Option<(Vec3, Vec3, Vec3)> {
     let mut s = SimplexData::with_capacity(4);
     s.push(SupportPoint::new(a, b, &(a.base() - b.base())));
     let mut prev_dist = f64::INFINITY;
@@ -574,7 +588,7 @@ pub fn epa(
     a: &impl Support,
     b: &impl Support,
     mut points: Vec<SupportPoint>,
-) -> Vec<(Vec3, Vec3, Vec3)> {
+) -> Option<(Vec3, Vec3, Vec3)> {
     debug_assert_eq!(points.len(), 4);
     let mut faces = vec![[0, 1, 2], [0, 2, 3], [0, 3, 1], [1, 2, 3]];
     let mut closest_points = vec![];
@@ -598,7 +612,7 @@ pub fn epa(
             .map(|(i, _)| i)
         else {
             eprintln!("math has failed!");
-            return vec![];
+            return None;
         };
         let new_point = SupportPoint::new(a, b, &closest_points[minface].diff);
         debug_assert!(
@@ -623,11 +637,11 @@ pub fn epa(
             // );
             let b_point =
                 closest_points[minface].a - closest_points[minface].diff;
-            return vec![(
+            return Some((
                 closest_points[minface].a,
                 b_point,
                 -closest_points[minface].diff.normalize(),
-            )];
+            ));
         }
         let mut edges = vec![];
         let mut i = 0;

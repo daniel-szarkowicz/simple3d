@@ -3,7 +3,7 @@ use std::{cell::UnsafeCell, marker::PhantomData, ops::Deref};
 use nalgebra::{Dyn, OMatrix, OVector};
 
 use crate::{
-    gjk::{self},
+    gjk::{self, Feature},
     rtree::{Leaf, QueryItem, RTree, AABBS},
     Float, Mat3, ObjID, Quat, Shape, Staticbodies, StaticbodyRef, Vec3, World,
 };
@@ -365,7 +365,7 @@ fn check_contact(
     p2: &Vec3,
     r2: &Quat,
 ) -> Vec<(Vec3, Vec3, Vec3)> {
-    gjk::gjk(&(s1, p1, r1), &(s2, p2, r2))
+    gjk::get_contacts(&(s1, p1, r1), &(s2, p2, r2))
 }
 
 fn resolve_rb_contact(
@@ -486,6 +486,63 @@ impl gjk::Support for (&Shape, &Vec3, &Quat) {
 
     fn base(&self) -> Vec3 {
         *self.1
+    }
+
+    fn feature(&self, direction: &Vec3) -> Feature {
+        match self.0 {
+            Shape::Sphere { diameter } => {
+                Feature::Point(self.1 + direction * *diameter)
+            }
+            Shape::Box {
+                width,
+                height,
+                depth,
+            } => {
+                let model_dir = self.2.inverse_transform_vector(direction);
+                let i = model_dir.iamax();
+                let sig = model_dir[i].signum();
+                let (model_normal, model_corners) = match i {
+                    0 => (
+                        Vec3::new(sig, 0.0, 0.0),
+                        [
+                            Vec3::new(sig * 0.5, 0.5, 0.5),
+                            Vec3::new(sig * 0.5, 0.5, -0.5),
+                            Vec3::new(sig * 0.5, -0.5, -0.5),
+                            Vec3::new(sig * 0.5, -0.5, 0.5),
+                        ],
+                    ),
+                    1 => (
+                        Vec3::new(0.0, sig, 0.0),
+                        [
+                            Vec3::new(0.5, sig * 0.5, 0.5),
+                            Vec3::new(0.5, sig * 0.5, -0.5),
+                            Vec3::new(-0.5, sig * 0.5, -0.5),
+                            Vec3::new(-0.5, sig * 0.5, 0.5),
+                        ],
+                    ),
+                    2 => (
+                        Vec3::new(0.0, 0.0, sig),
+                        [
+                            Vec3::new(0.5, 0.5, sig * 0.5),
+                            Vec3::new(0.5, -0.5, sig * 0.5),
+                            Vec3::new(-0.5, -0.5, sig * 0.5),
+                            Vec3::new(-0.5, 0.5, sig * 0.5),
+                        ],
+                    ),
+                    _ => unreachable!("i cannot be {i}"),
+                };
+                Feature::Polygon {
+                    normal: self.2.transform_vector(&model_normal),
+                    points: Box::new(model_corners.map(|c| {
+                        self.2.transform_vector(
+                            &c.component_mul(&Vec3::new(
+                                *width, *height, *depth,
+                            )),
+                        ) + self.1
+                    })),
+                }
+            }
+        }
     }
 }
 
