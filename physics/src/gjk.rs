@@ -1,6 +1,7 @@
 use std::ops::{Add, Mul, Sub};
 
-use nalgebra::{Const, DimMin, Matrix};
+use clipper2::{FillRule, Paths};
+use nalgebra::{AbstractRotation, Const, DimMin, Matrix, Rotation3};
 // use smallvec::SmallVec;
 
 use crate::{Float, Vec3};
@@ -147,7 +148,78 @@ pub fn get_contacts(
     a: &impl Support,
     b: &impl Support,
 ) -> Vec<(Vec3, Vec3, Vec3)> {
-    gjk(a, b).into_iter().collect()
+    let Some((p1, p2, n)) = gjk(a, b) else {
+        return vec![];
+    };
+    match (a.feature(&-n), b.feature(&n)) {
+        (Feature::Point(_), _) | (_, Feature::Point(_)) => vec![(p1, p2, n)],
+        (Feature::Segment(_, _), Feature::Segment(_, _)) => vec![(p1, p2, n)],
+        (Feature::Segment(_, _), _) | (_, Feature::Segment(_, _)) => {
+            todo!("segment needs to be clipped to the polygon")
+        }
+        (
+            Feature::Polygon {
+                normal: n1,
+                points: p1s,
+            },
+            Feature::Polygon {
+                normal: n2,
+                points: p2s,
+            },
+        ) => {
+            debug_assert!(n1.dot(&n) > 0.0);
+            debug_assert!(n2.dot(&-n) > 0.0);
+            let to_n1 = Rotation3::rotation_between(&Vec3::z(), &n1)
+                .unwrap_or_default();
+            let to_n2 = Rotation3::rotation_between(&Vec3::z(), &n2)
+                .unwrap_or_default();
+            let n1_to_n =
+                Rotation3::rotation_between(&n1, &n).unwrap_or_default();
+            let n2_to_n =
+                Rotation3::rotation_between(&n2, &n).unwrap_or_default();
+            let z1 = (to_n1 * p1s[0]).z;
+            let poly1: Paths = p1s
+                .iter()
+                .map(|p| {
+                    let v = n1_to_n * to_n1 * p;
+                    (v.x, v.y)
+                })
+                .collect::<Vec<_>>()
+                .into();
+            let z2 = (to_n2 * p2s[0]).z;
+            let poly2: Paths = p2s
+                .iter()
+                .map(|p| {
+                    let v = n2_to_n * to_n2 * p;
+                    (v.x, v.y)
+                })
+                .collect::<Vec<_>>()
+                .into();
+            let result =
+                clipper2::intersect(poly1, poly2, FillRule::default()).unwrap();
+            result
+                .into_iter()
+                .flatten()
+                .map(|point| {
+                    let x = point.x();
+                    let y = point.y();
+                    (
+                        to_n1.inverse_transform_vector(
+                            &(n1_to_n.inverse_transform_vector(&Vec3::new(
+                                x, y, 0.0,
+                            )) + Vec3::new(0.0, 0.0, z1)),
+                        ),
+                        to_n2.inverse_transform_vector(
+                            &(n2_to_n.inverse_transform_vector(&Vec3::new(
+                                x, y, 0.0,
+                            )) + Vec3::new(0.0, 0.0, z2)),
+                        ),
+                        n,
+                    )
+                })
+                .collect()
+        }
+    }
 }
 
 pub fn gjk(a: &impl Support, b: &impl Support) -> Option<(Vec3, Vec3, Vec3)> {
