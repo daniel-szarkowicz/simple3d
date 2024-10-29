@@ -144,6 +144,29 @@ fn handle_return_3(
     // result
 }
 
+fn project(p: &Vec3, sn: &Vec3, sp: &Vec3) -> Vec3 {
+    p + (sp - p).dot(sn) * sn
+}
+
+/*
+inverse projection
+    p' = p_0 + l * n_0, (p' - p_1) dot n_1 = 0
+    (p_0 + l * n_0 - p_1) dot n_1 = 0
+    l * n_0_para = n_1 dot (p_0 - p_1)
+*/
+
+fn project_along(
+    p: &Vec3,
+    along: &Vec3,
+    surf_norm: &Vec3,
+    surf_p: &Vec3,
+) -> Vec3 {
+    let surf_dist = (p - surf_p).dot(surf_norm);
+    let along_ratio = along.dot(surf_norm);
+    let l = surf_dist / along_ratio;
+    p - l * along
+}
+
 pub fn get_contacts(
     a: &impl Support,
     b: &impl Support,
@@ -167,56 +190,38 @@ pub fn get_contacts(
                 points: p2s,
             },
         ) => {
-            debug_assert!(n1.dot(&n) > 0.0);
-            debug_assert!(n2.dot(&-n) > 0.0);
-            let to_n1 = Rotation3::rotation_between(&Vec3::z(), &n1)
-                .unwrap_or_default();
-            let to_n2 = Rotation3::rotation_between(&Vec3::z(), &n2)
-                .unwrap_or_default();
-            let n1_to_n =
-                Rotation3::rotation_between(&n1, &n).unwrap_or_default();
-            let n2_to_n =
-                Rotation3::rotation_between(&n2, &n).unwrap_or_default();
-            let z1 = (to_n1 * p1s[0]).z;
-            let poly1: Paths = p1s
+            // debug_assert!(n1.dot(&-n) > 0.0);
+            // debug_assert!(n2.dot(&n) > 0.0);
+            let depth = n.dot(&(p2 - p1));
+            let rot = Rotation3::rotation_between(&n, &Vec3::z()).unwrap();
+            let np1s: Vec<_> = p1s
                 .iter()
-                .map(|p| {
-                    let v = n1_to_n * to_n1 * p;
-                    (v.x, v.y)
-                })
-                .collect::<Vec<_>>()
-                .into();
-            let z2 = (to_n2 * p2s[0]).z;
-            let poly2: Paths = p2s
+                .map(|p| rot * project(p, &n, &Vec3::zeros()))
+                .map(|p| [p.x, p.y])
+                .collect();
+            let np2s: Vec<_> = p2s
                 .iter()
-                .map(|p| {
-                    let v = n2_to_n * to_n2 * p;
-                    (v.x, v.y)
-                })
-                .collect::<Vec<_>>()
-                .into();
-            let result =
+                .map(|p| rot * project(p, &n, &Vec3::zeros()))
+                .map(|p| [p.x, p.y])
+                .collect();
+            let poly1: Paths = np1s.into();
+            let poly2: Paths = np2s.into();
+            let intersection =
                 clipper2::intersect(poly1, poly2, FillRule::default()).unwrap();
-            result
+            let rot_inv = rot.inverse();
+            intersection
                 .into_iter()
                 .flatten()
-                .map(|point| {
-                    let x = point.x();
-                    let y = point.y();
+                .map(|p| rot_inv * Vec3::new(p.x(), p.y(), 0.0))
+                .map(|p| {
                     (
-                        to_n1.inverse_transform_vector(
-                            &(n1_to_n.inverse_transform_vector(&Vec3::new(
-                                x, y, 0.0,
-                            )) + Vec3::new(0.0, 0.0, z1)),
-                        ),
-                        to_n2.inverse_transform_vector(
-                            &(n2_to_n.inverse_transform_vector(&Vec3::new(
-                                x, y, 0.0,
-                            )) + Vec3::new(0.0, 0.0, z2)),
-                        ),
-                        n,
+                        project_along(&p, &n, &n1, &p1s[0]),
+                        project_along(&p, &n, &n2, &p2s[0]),
                     )
                 })
+                .filter(|(p1, p2)| n.dot(&(p1 - p2)) <= depth)
+                .map(|(p1, p2)| (p1, p2, n))
+                .chain(std::iter::once((p1, p2, n)))
                 .collect()
         }
     }
