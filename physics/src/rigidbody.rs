@@ -258,6 +258,7 @@ impl Rigidbodies {
             let rb2 = unsafe { RigidbodyRefMut::new(*j, self) };
             resolve_rb_contact(rb1, rb2, *v1, *v2, *n);
         }
+        self.rb_contacts.reverse();
         // let a_matrix = self.compute_a_matrix();
         // let b_vector = self.compute_b_vector();
 
@@ -341,6 +342,7 @@ impl Rigidbodies {
             let sb = unsafe { StaticbodyRef::new(*j, sbs) };
             resolve_sb_contact(rb, sb, *v1, *v2, *n);
         }
+        self.sb_contacts.reverse();
     }
 
     pub(crate) fn aabbs(&self) -> AABBS<usize> {
@@ -385,9 +387,10 @@ fn resolve_rb_contact(
         // the bodies are separating
         RB_SEPARATION_FORCE * depth
     } else {
-        -(BOUNCYNESS + 1.0) * rel_v_normal
-            / (rb1.impulse_effectivness(p1, n)
-                + rb2.impulse_effectivness(p2, n))
+        RB_SEPARATION_FORCE * depth
+            - (BOUNCYNESS + 1.0) * rel_v_normal
+                / (rb1.impulse_effectivness(p1, n)
+                    + rb2.impulse_effectivness(p2, n))
     };
 
     let rel_v_tangent = rel_v - n * rel_v_normal;
@@ -436,7 +439,8 @@ fn resolve_sb_contact(
         // the bodies are separating
         SB_SEPARATION_FORCE * depth
     } else {
-        -(BOUNCYNESS + 1.0) * rel_v_normal / rb.impulse_effectivness(p1, n)
+        SB_SEPARATION_FORCE * depth
+            - (BOUNCYNESS + 1.0) * rel_v_normal / rb.impulse_effectivness(p1, n)
     };
 
     let rel_v_tangent = rel_v - n * rel_v_normal;
@@ -500,7 +504,7 @@ impl gjk::Support for (&Shape, &Vec3, &Quat) {
             } => {
                 let model_dir = self.2.inverse_transform_vector(direction);
                 let i = model_dir.iamax();
-                let sig = model_dir[i].signum();
+                let sig = model_dir[i].signum() * 1.01;
                 let (model_normal, model_corners) = match i {
                     0 => (
                         Vec3::new(sig, 0.0, 0.0),

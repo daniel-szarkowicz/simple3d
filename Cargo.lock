@@ -263,6 +263,27 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "613afe47fcd5fac7ccf1db93babcb082c5994d996f20b8b159f2ad1658eb5724"
 
 [[package]]
+name = "clipper2"
+version = "0.4.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "73e0a916e10c9df340b61739f89a146f8bf7cc4e877d50df6637fd01593ed8f8"
+dependencies = [
+ "clipper2c-sys",
+ "libc",
+ "thiserror",
+]
+
+[[package]]
+name = "clipper2c-sys"
+version = "0.1.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e2995248c63ec82bf22c921cfd26fe407a4402b7039e045d286f7470cd83fe9e"
+dependencies = [
+ "cc",
+ "libc",
+]
+
+[[package]]
 name = "codespan-reporting"
 version = "0.11.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1236,6 +1257,7 @@ checksum = "e3148f5046208a5d56bcfc03053e3ca6334e51da8dfb19b6cdc8b306fae3283e"
 name = "physics"
 version = "0.1.0"
 dependencies = [
+ "clipper2",
  "nalgebra",
 ]
 

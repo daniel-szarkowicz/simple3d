@@ -59,28 +59,29 @@ impl State {
             })
             .position(Vector3::new(0.0, 0.0, -dist))
             .finish();
-        for i in (1..=1000).map(f64::from) {
+        for i in (1..=100).map(f64::from) {
             world
-                .add_rigidbody(Shape::Sphere { diameter: 1.0 })
-                // .add_rigidbody(Shape::Box {
-                //     width: 1.0,
-                //     height: 1.0,
-                //     depth: 1.0,
-                // })
+                // .add_rigidbody(Shape::Sphere { diameter: 1.0 })
+                .add_rigidbody(Shape::Box {
+                    width: 1.0,
+                    height: 1.0,
+                    depth: 1.0,
+                })
                 .position(Vector3::new(
-                    i.cos() * (i / 10.0).cos() * (dist - thickness),
-                    i,
-                    i.sin() * (i / 10.0).cos() * (dist - thickness),
+                    0.0,
+                    // i.cos() * (i / 10.0).cos() * (dist - thickness),
+                    i * 5.0,
+                    0.0, // i.sin() * (i / 10.0).cos() * (dist - thickness),
                 ))
                 .finish();
         }
         // world
-        //     // .add_rigidbody(Shape::Box {
-        //     //     width: 1.0,
-        //     //     height: 1.0,
-        //     //     depth: 1.0,
-        //     // })
-        //     .add_rigidbody(Shape::Sphere { diameter: 1.0 })
+        //     .add_rigidbody(Shape::Box {
+        //         width: 1.0,
+        //         height: 1.0,
+        //         depth: 1.0,
+        //     })
+        //     // .add_rigidbody(Shape::Sphere { diameter: 1.0 })
         //     .position(Vector3::new(0.0, 0.5, 0.0))
         //     .mass(100.0)
         //     .finish();
@@ -90,7 +91,10 @@ impl State {
 
 impl AppState for State {
     fn update(&mut self) {
-        self.world.update(1.0 / 60.0);
+        let steps = 1;
+        for _ in 0..steps {
+            self.world.update(1.0 / 60.0 / steps as f64);
+        }
     }
 
     fn draw(&self, canvas: &mut Canvas) {

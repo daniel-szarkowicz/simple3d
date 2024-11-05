@@ -26,9 +26,9 @@ impl State {
                             depth: 1.0,
                         })
                         .position(Vector3::new(
-                            f64::from(x) * 1.01,
-                            f64::from(y) * 1.01,
-                            f64::from(z) * 1.01,
+                            f64::from(x) * 1.02,
+                            f64::from(y) * 1.02,
+                            f64::from(z) * 1.02,
                         ))
                         .finish();
                 }

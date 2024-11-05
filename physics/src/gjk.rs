@@ -193,7 +193,9 @@ pub fn get_contacts(
             // debug_assert!(n1.dot(&-n) > 0.0);
             // debug_assert!(n2.dot(&n) > 0.0);
             let depth = n.dot(&(p2 - p1));
-            let rot = Rotation3::rotation_between(&n, &Vec3::z()).unwrap();
+            let Some(rot) = Rotation3::rotation_between(&n, &Vec3::z()) else {
+                return vec![(p1, p2, n)];
+            };
             let np1s: Vec<_> = p1s
                 .iter()
                 .map(|p| rot * project(p, &n, &Vec3::zeros()))
@@ -219,7 +221,13 @@ pub fn get_contacts(
                         project_along(&p, &n, &n2, &p2s[0]),
                     )
                 })
-                .filter(|(p1, p2)| n.dot(&(p1 - p2)) <= depth)
+                .filter(|(p1, p2)| {
+                    let d = n.dot(&(p2 - p1));
+                    const E: Float = 10.0;
+                    // println!("0.0, {d}, {depth}");
+                    // 0.0 <= d && d <= depth
+                    -depth - E <= d && d <= depth + E
+                })
                 .map(|(p1, p2)| (p1, p2, n))
                 .chain(std::iter::once((p1, p2, n)))
                 .collect()
